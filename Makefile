@@ -1,38 +1,28 @@
-PROG =  hiworld
+PROG = test
 CC = gcc
-OUT = bin
+LD = gcc
+#MAKEDEPEND = gcc -E
+SRC = $(shell find . -name "*.c")
+OBJ = $(patsubst %.c,%.o,$(SRC))
+DEP = $(patsubst %.c,%.d,$(SRC))
+CFLAGS = -Wall  `sdl2-config --cflags`
+LDFLAGS = `sdl2-config --libs` -L/usr/local/lib
+COMPILE = $(CC) $(CFLAGS)
+LINK = $(LD) $(LDFLAGS)
 
-DEPDIR := .d
-$(shell mkdir -p $(DEPDIR) >/dev/null)
-$(shell mkdir -p $(OUT) >/dev/null)
-#DEPFLAGS = $@ -MMD -MF $(DEPDIR)/$*.Td
-DEPFLAGS = -MT $@ -MMD -MF $(DEPDIR)/$*.Td
-FILENAMES = $(notdir $(wildcard src/*.c))
-_OBJS = $(FILENAMES:%.c=$(OUT)/%.o)
-_DEPS = $(_OBJS:%.o=$(OUT)/%.d)
-_SRCS = $(FILENAMES:%.c=src/%.c)
-
-CXXFLAGS += `sdl2-config --cflags` -I/usr/local/include
-CXXFLAGS += -Ofast
-#CXXFLAGS += -g
-LDFLAGS += `sdl2-config --libs` -L/usr/local/lib -lm
-#LDFLAGS += -lm
-COMPILE.c = $(CC) $(DEPFLAGS) $(CFLAGS) $(CXXFLAGS) -c
+DEPFLAGS = -MMD
 all: $(PROG)
 
-$(PROG): $(_OBJS)
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
-POSTCOMPILE = @mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d && touch $@
+$(PROG): $(OBJ)
+	$(LINK) $^ -o $@
 
-$(OUT)/%.o : src/%.c $(DEPDIR)/%.d
-	$(COMPILE.c) $< -o $@
-	$(POSTCOMPILE)
-$(DEPDIR)/%.d: ;
-.PRECIOUS: $(DEPDIR)/%.d
+%.o: %.c %.d
+	$(COMPILE) -c $(DEPFLAGS) -o $@ $<
+%.d: ;
+
+.PHONY: clean
 
 clean:
-	@touch $(PROG) && rm -r $(OUT) $(DEPDIR) $(PROG)
-.PHONY: clean
-#include $(wildcard $(patsubst %,$(DEPDIR)/%.d,$(basename $(_SRCS))))
-include $(wildcard .d/*)
+	@touch $(DEP) $(OBJ) $(PROG)
+	@rm -r $(DEP) $(OBJ) $(PROG)
+include $(DEP)
