@@ -4,7 +4,6 @@
 //stdlib.h for atexit, and module_lists for init_modules.
 #include <time.h>
 #include <stdlib.h>
-#include "module_lists.h"
 void init_all(void);
 void cleanup(void);
 void update(int);
