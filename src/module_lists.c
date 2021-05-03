@@ -2,7 +2,7 @@
 //need stdlib to have NULL ptr.
 #include "stdlib.h"
 //default module lists.
-//any other such list will be supplied by a module.
-void (*init_modules[NUM_MODULES]) (void) = {};
-void (*update_modules[NUM_MODULES]) (int) = {};
-void (*cleanup_modules[NUM_MODULES]) (void) = {};
+//null-terminated
+void (*init_modules[]) (void) = {NULL};
+void (*update_modules[]) (int) = {NULL};
+void (*cleanup_modules[]) (void) = {NULL};
