@@ -7,8 +7,6 @@
 #include "module_lists.h"
 void init_all(void);
 void cleanup(void);
-void doInput(void);
-void draw(void);
 void update(int);
 
 int main(int argc, char *argv[]) {

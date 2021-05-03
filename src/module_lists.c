@@ -1,6 +1,4 @@
-#include "defs.h"
-//need stdlib to have NULL ptr.
-#include "stdlib.h"
+#include <stddef.h>
 //default module lists.
 //null-terminated
 void (*init_modules[]) (void) = {NULL};

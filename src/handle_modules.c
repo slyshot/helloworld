@@ -1,4 +1,3 @@
-#include "defs.h"
 #include <stddef.h>
 #include "module_lists.h"
 void init_all(void) {
