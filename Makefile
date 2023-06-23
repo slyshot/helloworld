@@ -9,7 +9,7 @@ DEP = $(patsubst %.c,%.d,$(SRC))
 IGN_OBJ = $(patsubst %.c,%.o,$(IGNORES))
 IGN_DEP = $(patsubst %.c,%.d,$(IGNORES))
 
-CFLAGS = -Wall -Wextra 
+CFLAGS = -Wall -Wextra -pedantic -g
 CFLAGS +=  -I./src/headers
 COMPILE = $(CC) $(CFLAGS)
 LINK = $(LD) $(LDFLAGS)
