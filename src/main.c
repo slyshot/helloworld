@@ -1,4 +1,4 @@
-#include <time.h>
+#include <sys/time.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include "handle_modules/handle_modules.h"
@@ -7,12 +7,14 @@ int main(int argc, char *argv[]) {
 	atexit(cleanup_modules);
     init_modules();
     uintmax_t dt = 0;
-    clock_t starttime, endtime;
 	while (1) {
-        starttime = clock();
+        struct timeval tv;
+        gettimeofday(&tv,NULL);
+        long long starttime = tv.tv_sec*1000LL + tv.tv_usec/1000;
         update_modules((int)(dt));
-        endtime = clock();
-        dt = (endtime - starttime);
+        gettimeofday(&tv,NULL);
+        long long endtime = tv.tv_sec*1000LL + tv.tv_usec/1000;
+        dt = (int)(endtime - starttime)*10;
 	}
 	return 0;
 }
