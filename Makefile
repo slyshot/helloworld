@@ -9,9 +9,12 @@ DEP = $(patsubst %.c,%.d,$(SRC))
 IGN_OBJ = $(patsubst %.c,%.o,$(IGNORES))
 IGN_DEP = $(patsubst %.c,%.d,$(IGNORES))
 
+CFLAGS += `sdl2-config --cflags` -I/usr/local/include
+LDFLAGS += `sdl2-config --libs` -L/usr/local/lib -lm
+LDFLAGS += -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
 CFLAGS = -Wall -Wextra -pedantic -g
 CFLAGS +=  -I./src/headers
-COMPILE = $(CC) $(CFLAGS)
+ COMPILE = $(CC) $(CFLAGS)
 LINK = $(LD) $(LDFLAGS)
 
 DEPFLAGS = -MMD
@@ -30,6 +33,6 @@ clean:
 	@rm -r $(DEP) $(OBJ) $(PROG)
 clean_all:
 	@touch $(DEP) $(OBJ) $(IGN_DEP) $(IGN_OBJ) $(PROG)
-	@rm -r $(DEP) $(OBK) $(IGN_DEP) $(IGN_OBJ) $(PROG)
+	@rm -r $(DEP) $(OBJ) $(IGN_DEP) $(IGN_OBJ) $(PROG)
 
 include $(DEP)

@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
         update_modules((int)(dt));
         gettimeofday(&tv,NULL);
         long long endtime = tv.tv_sec*1000LL + tv.tv_usec/1000;
-        dt = (int)(endtime - starttime)*10;
+        dt = (int)(endtime - starttime);
 	}
 	return 0;
 }

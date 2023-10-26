@@ -1,0 +1,747 @@
+#include "sdl/modules/vulkan/vkstate.h"
+#include "handle_modules/module.h"
+#include "handle_modules/module_com.h"
+#include "sdl/modules/positions/positions.h"
+#include "sdl/modules/textures/textures.h"
+#include "sdl/modules/vp/vp.h"
+#include "stb/stb_image.h"
+#include <cglm/cglm.h>
+#include <stdlib.h>
+#include <string.h>
+#include "log/log.h"
+#include <SDL2/SDL.h>
+
+#define TEXTURE_FILENAME "cube_texture.png"
+
+void triangle_init(void);
+void triangle_update(int);
+void write_command_buffers(void);
+void triangle_eventhandle(SDL_Event *);
+void execute_command_buffer_callback(int);
+void execute_command_buffer_renderpass_callback(int);
+// void triangle_swapchain_cleanup(void);
+void create_image(void);
+void triangle_before_vulkan_init(void);
+void triangle_swapchain_recreation_callback(void);
+void triangle_descriptorset_callback(void);
+module triangle = {
+	.title = "Triangle",
+	.description = "An example module for vulkan. It started as a triangle, but is now a cube!...",
+	.priority = {0,0,0},
+	.init = triangle_init,
+	.update = triangle_update,
+	.shared_data = &(comms) {
+		.num_comms = 7,
+		.comms = (module_com[]){
+			{
+				.data_type = after_swapchain_recreation_callback,
+				.fn_ptr = write_command_buffers,
+			},
+			{
+				.data_type = after_vulkan_init_callback,
+				.fn_ptr = triangle_swapchain_recreation_callback,
+			},			
+
+			{
+				.data_type = descriptorset_callback,
+				.fn_ptr = create_image,
+			},
+			{
+				.data_type = before_vulkan_init_callback,
+				.fn_ptr = triangle_before_vulkan_init,
+			},
+
+			{
+				.data_type = execute_commandbuf_renderpass_callback,
+				.fn_ptr = (void (*)(void))execute_command_buffer_renderpass_callback,
+			},
+			{
+				.data_type = execute_commandbuf_callback,
+				.fn_ptr = (void (*)(void))execute_command_buffer_callback,
+			},
+			{
+				.data_type = before_swapchain_recreation_callback,
+				.fn_ptr = triangle_swapchain_recreation_callback,
+			}
+
+		},
+	},
+	.cleanup = NULL,
+};
+
+
+//vertices is an example of a model.
+//in not too long, I should have more
+//:)
+static vec3 vertices[] = {
+    // Front face
+    {-0.5f, -0.5f, 0.5f},
+    {0.5f, -0.5f, 0.5f},
+    {0.5f, 0.5f, 0.5f},
+    {0.5f, 0.5f, 0.5f},
+    {-0.5f, 0.5f, 0.5f},
+    {-0.5f, -0.5f, 0.5f},
+    // Back face
+    {-0.5f, -0.5f, -0.5f},
+    {-0.5f, 0.5f, -0.5f},
+    {0.5f, 0.5f, -0.5f},
+    {0.5f, 0.5f, -0.5f},
+    {0.5f, -0.5f, -0.5f},
+    {-0.5f, -0.5f, -0.5f},
+    // Bottom face
+    {-0.5f, -0.5f, -0.5f},
+    {0.5f, -0.5f, -0.5f},
+    {0.5f, -0.5f, 0.5f},
+    {0.5f, -0.5f, 0.5f},
+    {-0.5f, -0.5f, 0.5f},
+    {-0.5f, -0.5f, -0.5f},
+    // Top face
+    {-0.5f, 0.5f, -0.5f},
+    {-0.5f, 0.5f, 0.5f},
+    {0.5f, 0.5f, 0.5f},
+    {0.5f, 0.5f, 0.5f},
+    {0.5f, 0.5f, -0.5f},
+    {-0.5f, 0.5f, -0.5f},
+    // Right face
+    {0.5f, -0.5f, -0.5f},
+    {0.5f, 0.5f, -0.5f},
+    {0.5f, 0.5f, 0.5f},
+    {0.5f, 0.5f, 0.5f},
+    {0.5f, -0.5f, 0.5f},
+    {0.5f, -0.5f, -0.5f},
+    // Left face
+    {-0.5f, -0.5f, -0.5f},
+    {-0.5f, -0.5f, 0.5f},
+    {-0.5f, 0.5f, 0.5f},
+    {-0.5f, 0.5f, 0.5f},
+    {-0.5f, 0.5f, -0.5f},
+    {-0.5f, -0.5f, -0.5f}
+};
+//where the cubes are
+// static vec3 positions[] = {
+//     {0.0f, 0.0f, 0.0f},
+//     {0.0f, 1.0f, 0.0f},
+// };
+
+
+
+static vec2 cube_texture_unwrap[] = {
+	//front
+	{128.0f, 0.0f},
+	{64.0f, 0.0f},
+	{64.0f, 64.0f},
+	{64.0f, 64.0f},
+	{128.0f, 64.0f},
+	{128.0f, 0.0f},
+	//back
+	{128.0f, 64.0f},
+	{128.0f, 128.0f},
+	{192.0f, 128.0f},
+	{192.0f, 128.0f},
+	{192.0f, 64.0f},
+	{128.0f, 64.0f},
+	//top
+	{0.0f, 128.0f},
+	{64.0f, 128.0f},
+	{64.0f, 64.0f},
+	{64.0f, 64.0f},
+	{0.0f, 64.0f},
+	{0.0f, 128.0f},
+	//bottom
+	{128.0f, 128.0f},
+	{128.0f, 64.0f},
+	{64.0f, 64.0f},
+	{64.0f, 64.0f},
+	{64.0f, 128.0f},
+	{128.0f, 128.0f},
+	//left
+	{0.0f, 0.0f},
+	{0.0f, 64.0f},
+	{64.0f, 64.0f},
+	{64.0f, 64.0f},
+	{64.0f, 0.0f},
+	{0.0f, 0.0f},
+	//right
+	{192.0f, 0.0f},
+	{128.0f, 0.0f},
+	{128.0f, 64.0f},
+	{128.0f, 64.0f},
+	{192.0f, 64.0f},
+	{192.0f, 0.0f},
+
+};
+
+
+mat4 triangle_models[2] = {0};
+mat4 triangle_vp = {0};
+// vec3 colors[6] = (vec3[6]) {
+// 	{1,0,0},{0,1,0},{0,0,1}, {1,0,0},{0,1,0},{0,0,1}, 
+// };
+
+/*
+this is a nearly failed attempt to isolate the triangle-drawing portion of the code(not including shaders)
+issue is: buffers. oh buffers. they need to be bound to the command buffer upon the command buffers creation, but the command buffer needs to be recreated every time
+the swapchain is invalidated. Which is //all the time//. So the solution I came up with is using num_buffers, it just iterates through them both in the initialization of this
+and in the vulkan initialization, if they're not NULL (meaning if nobody else has any buffers to add). That's the crux; we need vulkan to be initialized in order to do things, 
+but vulkan needs us to have already done things in order to finish setting things up, and to recreate things.
+*/
+
+extern uint32_t find_memory_type(uint32_t, VkMemoryPropertyFlags);
+extern int get_memory_type_index(VkBuffer);
+
+static int vertices_buffer_index = -1;
+static int texture_buffer_index = -1;
+static int positions_buffer_index = -1;
+static int texture_selector_binding = -1;
+
+void create_buffers(void);
+
+VkCommandBuffer *secondary_command_buffers;
+VkCommandBuffer *init_command_buffer;
+void triangle_before_vulkan_init(void) {
+	for (int i = 0; i < 36; i++) {
+		// if (i < 6) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0], cube_texture_unwrap[i][1] - 64);
+		// else if (i < 12) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0] + 64, cube_texture_unwrap[i][1] - 128);
+		// else if (i < 18) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0] - 64, cube_texture_unwrap[i][1] - 64);
+		// else if (i < 24) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0] + 128, cube_texture_unwrap[i][1] + 64);
+		// else if (i < 30) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0], cube_texture_unwrap[i][1] - 64);
+		// else if (i < 36) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0], cube_texture_unwrap[i][1] - 64);
+		// // printf("%d\n",i);
+		// printf("\n");
+		cube_texture_unwrap[i][0] = ((float)cube_texture_unwrap[i][0])/384.0f;
+		cube_texture_unwrap[i][1] = ((float)cube_texture_unwrap[i][1])/256.0f;
+
+		// printf("%f %f\n",cube_texture_unwrap[i][0], cube_texture_unwrap[i][1]);
+	}
+	vkstate.num_required_combined_image_sampler_descriptors++;
+}
+
+VkImage texture_image;
+static unsigned char *image_data;
+VkImageView texture_image_view;
+VkSampler texture_sampler;
+static int texture_descriptor_binding = -1; 
+VkBuffer *staging_buffer;
+
+int selector_buffer_index;
+VkBuffer *descriptor_buffer;
+// void create_selector_buffer(void) {
+
+
+// }
+vec3 test = {1,2,2};
+void triangle_swapchain_recreation_callback(void) {
+	// create_buffers();
+	// create_image();
+}
+void write_command_buffers(void) {
+
+	//dont really need to check both, but it is more descriptive this way.
+	if (vertices_buffer_index == -1 || texture_buffer_index == -1) return;
+
+	for (uint32_t buffer_index = 0; buffer_index < vkstate.cmd_allocate_info->commandBufferCount; buffer_index++) {
+		VkCommandBufferInheritanceInfo inheritence_info = {0};
+		VkCommandBufferBeginInfo cmd_begin_info = {0};
+		{ //command begin info
+			// if (vkstate.cmd_begin_info == NULL) {
+			// 	vkstate.cmd_begin_info = calloc(sizeof(VkCommandBufferBeginInfo),1);
+			// }
+			inheritence_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+			inheritence_info.renderPass = *vkstate.render_pass;
+			inheritence_info.subpass = 0;
+			cmd_begin_info.pInheritanceInfo = &inheritence_info;
+			cmd_begin_info.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+			cmd_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		}
+		vkBeginCommandBuffer(secondary_command_buffers[buffer_index], &cmd_begin_info);
+
+
+
+		vkCmdBindPipeline(secondary_command_buffers[buffer_index], VK_PIPELINE_BIND_POINT_GRAPHICS, vkstate.graphics_pipeline);
+		vkCmdBindDescriptorSets(secondary_command_buffers[buffer_index], VK_PIPELINE_BIND_POINT_GRAPHICS, *vkstate.pipeline_layout, 0, 1, &vp_descriptor_set, 0, NULL);
+		vkCmdBindDescriptorSets(secondary_command_buffers[buffer_index], VK_PIPELINE_BIND_POINT_GRAPHICS, *vkstate.pipeline_layout, 1, 1, &vkstate.descriptor_sets[texture_descriptor_binding], 0, NULL);
+		VkDeviceSize offsets[] = {0};
+		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], vertices_binding, 1, &vkstate.buffers[vertices_buffer_index], offsets);
+		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], texture_vertex_binding, 1, &vkstate.buffers[texture_buffer_index], offsets);
+		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], positions_binding, 1, &vkstate.buffers[positions_buffer_index], offsets);
+
+
+
+		//WARNING currently, vertices is an array, not a pointer. This means sizeof(vertices) gives the size of the /whole thing/, not just the size of a pointer.
+		//replace this if/when dynamic memroy allocatino is being used!
+		vkCmdDraw(secondary_command_buffers[buffer_index], 36, 2, 0, 0);
+		// vkCmdDraw(vkstate.cmd_buffers[buffer_index], sizeof(vertices)/sizeof(vertices[0]), 1, 0, 0);
+		//now im just using a number. again, it needs to be the size of the whole array
+		vkEndCommandBuffer(secondary_command_buffers[buffer_index]);
+	}
+}
+
+unsigned long long read_image(char *filename, unsigned char **out) {
+	int width, height, channels;
+	*out = stbi_load(filename, &width, &height, &channels, 4);
+	if (channels != 4) {
+		LOG_ERROR("Incorrect number of channels in texture.\nExpected: 4, got: %d\n", channels);
+		exit(-1);
+	}
+	return width*height*channels;
+}
+
+void create_image(void) {
+	if (texture_descriptor_binding != -1) return;
+	// printf("GOT HERE!\n");
+	VkImageCreateInfo image_info = {0};
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	// image_info.flags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_info.extent = (VkExtent3D){.width = 384, .height = 256, .depth = 1};
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	VkResult result = vkCreateImage(vkstate.log_dev, &image_info, NULL, &texture_image);
+	if (result != VK_SUCCESS) {
+		LOG_ERROR("Unable to create texture image, Errnum %d\n",result);
+	}
+
+	VkDeviceMemory staging_buffer_memory;
+
+
+	staging_buffer = malloc(sizeof(VkBuffer));
+	VkBufferCreateInfo staging_buffer_info = {0};
+	staging_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	staging_buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	staging_buffer_info.flags = 0;
+	staging_buffer_info.size = read_image(TEXTURE_FILENAME, &image_data);
+	staging_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+
+	vkCreateBuffer(vkstate.log_dev, &staging_buffer_info, NULL, staging_buffer);
+
+	VkMemoryRequirements buffer_mem_req;
+	vkGetBufferMemoryRequirements(vkstate.log_dev, *staging_buffer, &buffer_mem_req);
+
+
+	VkMemoryAllocateInfo buffer_allocate_info = {0};
+	buffer_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	buffer_allocate_info.allocationSize =  buffer_mem_req.size;
+	buffer_allocate_info.memoryTypeIndex = get_memory_type_index(*staging_buffer);
+	result = vkAllocateMemory(vkstate.log_dev, &buffer_allocate_info, NULL, &staging_buffer_memory);
+
+	if (result != VK_SUCCESS) {
+		LOG_ERROR("Unable to allocate memory, Errnum %d\n",result);
+	}
+
+
+
+	VkMemoryRequirements image_mem_req;
+	vkGetImageMemoryRequirements(vkstate.log_dev, texture_image, &image_mem_req);
+
+	VkMemoryAllocateInfo image_allocate_info = {0};
+	image_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	image_allocate_info.allocationSize =  image_mem_req.size;
+	image_allocate_info.memoryTypeIndex = find_memory_type(image_mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkDeviceMemory image_memory;
+	result = vkAllocateMemory(vkstate.log_dev, &image_allocate_info, NULL, &image_memory);
+
+	if (result != VK_SUCCESS) {
+		LOG_ERROR("Unable to allocate memory, Errnum %d\n",result);
+	}
+
+
+	vkBindBufferMemory(vkstate.log_dev, *staging_buffer, staging_buffer_memory, 0);
+	void *staging_buffer_window;
+	vkMapMemory(vkstate.log_dev, staging_buffer_memory, 0, buffer_mem_req.size, 0, &staging_buffer_window);
+	memcpy(staging_buffer_window, image_data, buffer_mem_req.size);
+	vkUnmapMemory(vkstate.log_dev, staging_buffer_memory);
+
+
+	vkBindImageMemory(vkstate.log_dev, texture_image, image_memory, 0);
+
+	VkImageViewCreateInfo image_view_create_info = {0};
+	image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	image_view_create_info.image = texture_image;
+	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+	image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	image_view_create_info.components = (VkComponentMapping){.r = VK_COMPONENT_SWIZZLE_IDENTITY, .g = VK_COMPONENT_SWIZZLE_IDENTITY, .b = VK_COMPONENT_SWIZZLE_IDENTITY, .a = VK_COMPONENT_SWIZZLE_IDENTITY};
+	image_view_create_info.subresourceRange = (VkImageSubresourceRange) {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1};
+	vkCreateImageView(vkstate.log_dev, &image_view_create_info, NULL, &texture_image_view);
+
+	VkSamplerCreateInfo sampler_create_info = {0};
+	sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_create_info.magFilter = VK_FILTER_NEAREST;
+	sampler_create_info.minFilter = VK_FILTER_NEAREST;
+	sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler_create_info.anisotropyEnable = VK_FALSE;
+	sampler_create_info.maxAnisotropy = 0;
+	// sampler_create_info.anisotropyEnable = VK_TRUE;
+	// sampler_create_info.maxAnisotropy = 16;
+	sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+	sampler_create_info.compareEnable = VK_FALSE;
+	sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+	sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+
+	result = vkCreateSampler(vkstate.log_dev, &sampler_create_info, NULL, &texture_sampler);
+	if (result != VK_SUCCESS) {
+	    LOG_ERROR("Unable to create texture sampler, Errnum %d\n",result);
+	}
+	/*
+		things around here have to be made into a callback.
+		the callback for this is "descriptorset_callback", and I'm gonna want swapchain cleanup with "before_swapchain_recreation_callback" similar to what vp.c does.0
+	*/
+
+
+	// vkstate.num_descriptor_sets++;
+
+
+
+
+	vkstate.num_descriptor_bindings++;
+	texture_descriptor_binding = vkstate.num_descriptor_bindings - 1;
+	VkDescriptorSetLayoutBinding texture_image_sampler_layout_binding = {0};
+    texture_image_sampler_layout_binding.binding = texture_descriptor_binding;
+    texture_image_sampler_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    texture_image_sampler_layout_binding.descriptorCount = 1;
+    texture_image_sampler_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    texture_image_sampler_layout_binding.pImmutableSamplers = NULL;
+
+	vkstate.num_descriptor_bindings++;
+	texture_selector_binding = vkstate.num_descriptor_bindings - 1;
+	VkDescriptorSetLayoutBinding texture_selector_layout_binding = {0};
+    texture_selector_layout_binding.binding = texture_selector_binding;
+    texture_selector_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    texture_selector_layout_binding.descriptorCount = 1;
+    texture_selector_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    texture_selector_layout_binding.pImmutableSamplers = NULL;
+
+
+
+
+	VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {0};
+	descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	descriptor_set_layout_create_info.bindingCount = 2;
+	descriptor_set_layout_create_info.pBindings = (VkDescriptorSetLayoutBinding[]){texture_image_sampler_layout_binding, texture_selector_layout_binding};
+	// VkDescriptorSetLayout descriptor_set_layout;
+	vkstate.num_descriptor_set_layouts++;
+	vkstate.descriptor_set_layouts = realloc(vkstate.descriptor_set_layouts, sizeof(VkDescriptorSetLayout)*vkstate.num_descriptor_set_layouts);
+	result = vkCreateDescriptorSetLayout(vkstate.log_dev, &descriptor_set_layout_create_info, NULL, &vkstate.descriptor_set_layouts[vkstate.num_descriptor_set_layouts - 1]);
+	if (result != VK_SUCCESS) {
+	    LOG_ERROR("Unable to create descriptor set layout, Errnum %d\n",result);
+	}
+
+	vkstate.num_descriptor_sets++;
+	VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {0};
+	descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	descriptor_set_alloc_info.descriptorPool = *vkstate.combined_image_sampler_descriptor_pool;
+	descriptor_set_alloc_info.descriptorSetCount = 1;
+	descriptor_set_alloc_info.pSetLayouts = &vkstate.descriptor_set_layouts[vkstate.num_descriptor_set_layouts - 1];
+	vkstate.descriptor_sets = realloc(vkstate.descriptor_sets, vkstate.num_descriptor_sets*sizeof(VkDescriptorSet));
+	result = vkAllocateDescriptorSets(vkstate.log_dev, &descriptor_set_alloc_info, &vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1]);
+
+	if (result != VK_SUCCESS) {
+		LOG_ERROR("Unable to create descriptor set layout. Errnum %d\n",result);
+	}
+
+
+
+	//make selector buffer
+	vkstate.num_buffers++;
+	selector_buffer_index = vkstate.num_buffers - 1;
+
+	VkBufferCreateInfo selector_create_buffer_info = {0};
+	selector_create_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	selector_create_buffer_info.size = sizeof(vec3);
+	selector_create_buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	selector_create_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	vkstate.buffers = realloc(vkstate.buffers, vkstate.num_buffers*sizeof(VkBuffer));
+	result = vkCreateBuffer(vkstate.log_dev, &selector_create_buffer_info, NULL, &vkstate.buffers[selector_buffer_index]);
+	CHECK_ERROR(result, "Unable to create vp buffer. Errno %d\n",result);
+
+	//create buffer memory
+	vkstate.buffer_mem = realloc(vkstate.buffer_mem, vkstate.num_buffers*sizeof(VkDeviceMemory));
+	VkMemoryRequirements mem_req;
+	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[selector_buffer_index], &mem_req);
+	VkMemoryAllocateInfo alloc_info = {0};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_req.size;
+	alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[selector_buffer_index]);
+	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL, &vkstate.buffer_mem[selector_buffer_index]);
+	if (result != VK_SUCCESS) {
+		LOG_ERROR("Unable to allocate memory for vp buffer. Errno %d\n",result);
+	}
+
+	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[selector_buffer_index], vkstate.buffer_mem[selector_buffer_index], 0);
+
+	VkDescriptorBufferInfo descriptor_buffer_info = {0};
+	descriptor_buffer_info.buffer = vkstate.buffers[vkstate.num_buffers-1];
+	descriptor_buffer_info.offset = 0;
+	descriptor_buffer_info.range = sizeof(vec3);
+
+	
+	// vkstate.num_buffers++;
+	// VkBufferCreateInfo selector_buffer = {}
+
+	VkWriteDescriptorSet selector_descriptor_write = {0};
+	selector_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	selector_descriptor_write.dstSet = vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1];
+	selector_descriptor_write.dstBinding = texture_selector_binding;
+	selector_descriptor_write.dstArrayElement = 0;
+	selector_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	selector_descriptor_write.descriptorCount = 1;
+	selector_descriptor_write.pBufferInfo = &descriptor_buffer_info;
+
+
+
+
+
+	VkDescriptorImageInfo imageInfo = {0};
+	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	imageInfo.imageView = texture_image_view;
+	imageInfo.sampler = texture_sampler;
+
+	VkWriteDescriptorSet descriptor_write = {0};
+	descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptor_write.dstSet = vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1];
+	descriptor_write.dstBinding = texture_descriptor_binding;
+	descriptor_write.dstArrayElement = 0;
+	descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptor_write.descriptorCount = 1;
+	descriptor_write.pImageInfo = &imageInfo;
+	vkUpdateDescriptorSets(vkstate.log_dev, 2, (VkWriteDescriptorSet[]){descriptor_write, selector_descriptor_write}, 0, NULL);
+
+	void *data;
+	vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[selector_buffer_index], 0, sizeof(vec3), 0, &data);
+	memcpy(data, (vec3){1,2,2}, sizeof(vec3));
+	vkUnmapMemory(vkstate.log_dev, vkstate.buffer_mem[selector_buffer_index]);
+
+
+
+
+
+
+	// VkSamplerCreateInfo
+	// Allocate and bind buffer memory...
+}
+
+void triangle_descriptorset_callback(void) {
+	create_image();
+}
+void create_buffers(void) {
+	//im doing it like this because it's the most lazy way to allocate a number of buffers when I won't know what that number will be
+	//if I settle on something, I'll change all the reallocs to one and whatnot
+	/* resize relevant arrays */
+	vkstate.num_buffers++;
+	vkstate.buffer_mem = realloc(vkstate.buffer_mem, sizeof(VkDeviceMemory)*vkstate.num_buffers);
+	vkstate.buffer_data	= realloc(vkstate.buffer_data, sizeof(void *)*vkstate.num_buffers);
+	vkstate.buffers = realloc(vkstate.buffers, sizeof(VkBuffer)*vkstate.num_buffers);
+	vertices_buffer_index = vkstate.num_buffers - 1;
+	/* create first buffer */
+	VkBufferCreateInfo vertices_buffer_info = (VkBufferCreateInfo) {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, 
+		.size = sizeof(vertices),
+		.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
+	VkResult result = vkCreateBuffer(vkstate.log_dev, &vertices_buffer_info, NULL, &vkstate.buffers[vertices_buffer_index]);
+	CHECK_ERROR(result, "Failed to create position vertex buffer. Erro num %d\n", result);
+	/* Deal with first buffer's memory */
+	VkMemoryRequirements mem_req;
+	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[vertices_buffer_index], &mem_req);
+	VkMemoryAllocateInfo alloc_info = {0};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_req.size;
+	alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[vertices_buffer_index]);
+	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL,&vkstate.buffer_mem[vertices_buffer_index]);
+	CHECK_ERROR(result, "error allocating memory. error num %d\n",result);
+	if (result != VK_SUCCESS) exit(-1);
+	/* bind it, map it, copy it */
+	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[vertices_buffer_index], vkstate.buffer_mem[vertices_buffer_index], 0);
+	vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[vertices_buffer_index],  0, vertices_buffer_info.size, 0, &vkstate.buffer_data[vertices_buffer_index]);
+	memcpy(vkstate.buffer_data[vertices_buffer_index], vertices, vertices_buffer_info.size);
+
+	/* resize relevant arrays */
+	vkstate.num_buffers++;
+	vkstate.buffer_mem = realloc(vkstate.buffer_mem, sizeof(VkDeviceMemory)*vkstate.num_buffers);
+	vkstate.buffer_data	= realloc(vkstate.buffer_data, sizeof(void *)*vkstate.num_buffers);
+	vkstate.buffers = realloc(vkstate.buffers, sizeof(VkBuffer)*vkstate.num_buffers);
+	texture_buffer_index = vkstate.num_buffers - 1;
+	/* create second buffer -- copy most of the data from the first */
+	VkBufferCreateInfo texture_buffer_info = vertices_buffer_info;
+	texture_buffer_info.size = sizeof(cube_texture_unwrap);
+	vkCreateBuffer(vkstate.log_dev, &texture_buffer_info, NULL, &vkstate.buffers[texture_buffer_index]);
+	CHECK_ERROR(result, "Failed to create texture sampling vertex buffer. Erro num %d\n", result);
+	/* deal with second buffers memory */
+	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[texture_buffer_index], &mem_req);
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_req.size;
+	alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[texture_buffer_index]);
+	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL,&vkstate.buffer_mem[texture_buffer_index]);
+	CHECK_ERROR(result, "error allocating memory. error num %d\n",result);
+	if (result != VK_SUCCESS) exit(-1);
+	/* bind it, map it, copy it */
+	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[texture_buffer_index], vkstate.buffer_mem[texture_buffer_index], 0);
+	vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[texture_buffer_index],  0, texture_buffer_info.size, 0, &vkstate.buffer_data[texture_buffer_index]);
+	memcpy(vkstate.buffer_data[texture_buffer_index], cube_texture_unwrap, texture_buffer_info.size);
+
+
+
+	/* resize relevant arrays */
+	vkstate.num_buffers++;
+	vkstate.buffer_mem = realloc(vkstate.buffer_mem, sizeof(VkDeviceMemory)*vkstate.num_buffers);
+	vkstate.buffer_data	= realloc(vkstate.buffer_data, sizeof(void *)*vkstate.num_buffers);
+	vkstate.buffers = realloc(vkstate.buffers, sizeof(VkBuffer)*vkstate.num_buffers);
+	positions_buffer_index = vkstate.num_buffers - 1;
+	/* create second buffer -- copy most of the data from the first */
+	VkBufferCreateInfo positions_buffer_info = vertices_buffer_info;
+	positions_buffer_info.size = sizeof(triangle_models);
+	vkCreateBuffer(vkstate.log_dev, &texture_buffer_info, NULL, &vkstate.buffers[positions_buffer_index]);
+	CHECK_ERROR(result, "Failed to create texture sampling vertex buffer. Erro num %d\n", result);
+	/* deal with second buffers memory */
+	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[positions_buffer_index], &mem_req);
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_req.size;
+	alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[positions_buffer_index]);
+	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL,&vkstate.buffer_mem[positions_buffer_index]);
+	CHECK_ERROR(result, "error allocating memory. error num %d\n",result);
+	if (result != VK_SUCCESS) exit(-1);
+	/* bind it, map it, copy it */
+	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[positions_buffer_index], vkstate.buffer_mem[positions_buffer_index], 0);
+	vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[positions_buffer_index],  0, positions_buffer_info.size, 0, &vkstate.buffer_data[positions_buffer_index]);
+	// memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models[1], positions_buffer_info.size);
+
+
+
+
+
+
+
+
+
+}
+
+// mat4 model_test;
+void create_command_buffers() {
+	VkCommandBufferAllocateInfo allocInfo = {0};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = vkstate.command_pool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+	allocInfo.commandBufferCount = 3;
+	secondary_command_buffers = malloc(sizeof(VkCommandBuffer)*3);
+	VkResult result = vkAllocateCommandBuffers(vkstate.log_dev, &allocInfo, secondary_command_buffers);
+	CHECK_ERROR(result, "Unable to allocate secondary command buffers. Errnum %d\n", result);
+	allocInfo.commandBufferCount = 1;
+	init_command_buffer = malloc(sizeof(VkCommandBuffer)*1);
+	result = vkAllocateCommandBuffers(vkstate.log_dev, &allocInfo, init_command_buffer);
+	CHECK_ERROR(result, "Unable to allocate image copy command buffer. Errnum %d\n", result);
+}
+
+void write_image_copy_command_buffer() {
+
+		VkCommandBufferInheritanceInfo inheritence_info = {0};
+		VkCommandBufferBeginInfo cmd_begin_info = {0};
+		{ //command begin info
+			// if (vkstate.cmd_begin_info == NULL) {
+			// 	vkstate.cmd_begin_info = calloc(sizeof(VkCommandBufferBeginInfo),1);
+			// }
+			inheritence_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+			inheritence_info.renderPass = *vkstate.render_pass;
+			inheritence_info.subpass = 0;
+			cmd_begin_info.pInheritanceInfo = &inheritence_info;
+			cmd_begin_info.flags = 0;
+			cmd_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		}
+	vkBeginCommandBuffer(*init_command_buffer, &cmd_begin_info);
+		VkImageMemoryBarrier barrier_to_transfer_dst = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.srcAccessMask = 0,
+			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = texture_image,
+			.subresourceRange = (VkImageSubresourceRange) {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+			},
+		};
+		vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier_to_transfer_dst);
+		VkBufferImageCopy region = {0};
+		region.bufferRowLength = 384;
+		region.bufferOffset = 0;
+		region.bufferImageHeight = 256;
+		region.imageOffset = (VkOffset3D) {.x = 0, .y = 0, .z = 0};
+		region.imageSubresource = (VkImageSubresourceLayers) {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.mipLevel = 0,
+			.layerCount = 1,
+			.baseArrayLayer = 0,
+		};
+		region.imageExtent = (VkExtent3D){.width = 384, .depth = 1, .height = 256};
+		vkCmdCopyBufferToImage(*init_command_buffer, *staging_buffer, texture_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+		VkImageMemoryBarrier barrier_to_shader_read = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = texture_image,
+			.subresourceRange = (VkImageSubresourceRange) {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+			},
+		};
+		vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier_to_shader_read);
+	vkEndCommandBuffer(*init_command_buffer);
+
+}
+static int has_copied_image = 0;
+void execute_command_buffer_renderpass_callback(int index) {
+	vkCmdExecuteCommands(vkstate.cmd_buffers[index], 1, &secondary_command_buffers[index]);
+}
+
+void execute_command_buffer_callback(int index) {
+	if (has_copied_image) return;
+	has_copied_image = 1;
+	vkCmdExecuteCommands(vkstate.cmd_buffers[index], 1, init_command_buffer);
+}
+
+void triangle_init() {
+	create_buffers();
+	create_image();
+	glm_mat4_identity(triangle_models[0]);
+	glm_mat4_identity(triangle_models[1]);
+	glm_translate(triangle_models[0], (vec3){0,0,5});
+	glm_translate(triangle_models[1], (vec3){0,1,3});
+	glm_scale(triangle_models[0], (vec3){0.5f,0.5f,0.5f});
+	memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models, sizeof(triangle_models));
+	create_command_buffers();
+	write_image_copy_command_buffer();
+	write_command_buffers();
+}
+void triangle_update(int dt) {
+	glm_rotate(triangle_models[0], .005f, (vec3){1,1,1});
+	memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models, sizeof(triangle_models));
+	void *data;
+	vkMapMemory(vkstate.log_dev, vp_buffer_memory, 0, sizeof(mat4), 0, &data);
+	glm_mat4_mulN((mat4 *[]){&projection, &view}, 2, data);
+	vkUnmapMemory(vkstate.log_dev, vp_buffer_memory);
+
+}
+void triangle_eventhandle(SDL_Event *e) {
+
+}

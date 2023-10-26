@@ -37,19 +37,19 @@ void init_priority_handling(void) {
 }
 void init_modules(void) {
     for (size_t i = 0; modules[i] != NULL; i++) {
-        if (priority_sorted_init[i]->priority[0] == -1) continue;
+        if (priority_sorted_init[i]->init == NULL || priority_sorted_init[i]->priority[0] == -1) continue;
         priority_sorted_init[i]->init();
     }
 }
 void update_modules(int dt) {
     for (size_t i = 0; modules[i] != NULL; i++) {
-        if (priority_sorted_init[i]->priority[1] == -1) continue;
+        if (priority_sorted_update[i]->update == NULL || priority_sorted_update[i]->priority[1] == -1) continue;
         priority_sorted_update[i]->update(dt);
     }
 }
 void cleanup_modules(void) {
     for (size_t i = 0; modules[i] != NULL; i++) {
-        if (priority_sorted_init[i]->priority[2] == -1) continue;
+        if (priority_sorted_cleanup[i]->cleanup == NULL || priority_sorted_cleanup[i]->priority[2] == -1) continue;
         priority_sorted_cleanup[i]->cleanup();
     }
 }
