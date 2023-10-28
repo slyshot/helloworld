@@ -33,6 +33,7 @@ typedef struct {
 
 	VkImageViewCreateInfo *imageview_infos;
 	VkImageView *imageviews;
+	VkImageView *resolve_imageviews;
 
 	VkImageCreateInfo *depth_buffer_image_info;
 	VkImage *depth_buffer_image;
@@ -96,7 +97,7 @@ typedef struct {
 	VkDescriptorSet *descriptor_sets;
 
 	int max_anisotropy;
-
+	VkSampleCountFlagBits max_sample_count;
 	int num_required_uniform_descriptors;
 	VkDescriptorPool *uniform_descriptor_pool;
 	int num_required_combined_image_sampler_descriptors;

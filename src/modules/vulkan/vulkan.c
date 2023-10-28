@@ -315,6 +315,14 @@ void generate_physical_device(vk_state *vkstate) {
 				if (surface_supported && props.deviceType & VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
 					found_device = 1;
 					vkstate->phys_dev = devices[i];
+					vkstate->max_sample_count = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+					if (vkstate->max_sample_count & VK_SAMPLE_COUNT_64_BIT) vkstate->max_sample_count = VK_SAMPLE_COUNT_64_BIT;  
+					if (vkstate->max_sample_count & VK_SAMPLE_COUNT_32_BIT) vkstate->max_sample_count = VK_SAMPLE_COUNT_32_BIT;  
+					if (vkstate->max_sample_count & VK_SAMPLE_COUNT_16_BIT) vkstate->max_sample_count = VK_SAMPLE_COUNT_16_BIT;  
+					if (vkstate->max_sample_count & VK_SAMPLE_COUNT_8_BIT) vkstate->max_sample_count = VK_SAMPLE_COUNT_8_BIT;  
+					if (vkstate->max_sample_count & VK_SAMPLE_COUNT_4_BIT) vkstate->max_sample_count = VK_SAMPLE_COUNT_4_BIT;  
+					if (vkstate->max_sample_count & VK_SAMPLE_COUNT_2_BIT) vkstate->max_sample_count = VK_SAMPLE_COUNT_2_BIT;  
+					if (vkstate->max_sample_count & VK_SAMPLE_COUNT_1_BIT) vkstate->max_sample_count = VK_SAMPLE_COUNT_1_BIT;  
 					vkstate->max_anisotropy = props.limits.maxSamplerAnisotropy;
 					break;
 				}
@@ -483,7 +491,7 @@ void generate_depth_buffer_image(vk_state *vkstate) {
 	vkstate->depth_buffer_image_info->tiling = VK_IMAGE_TILING_OPTIMAL;
 	vkstate->depth_buffer_image_info->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	vkstate->depth_buffer_image_info->usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-	vkstate->depth_buffer_image_info->samples = VK_SAMPLE_COUNT_1_BIT;
+	vkstate->depth_buffer_image_info->samples = vkstate->max_sample_count;
 	vkstate->depth_buffer_image_info->sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	vkstate->depth_buffer_image = calloc(sizeof(VkImage),1);
 	VkResult result = vkCreateImage(vkstate->log_dev,vkstate->depth_buffer_image_info,NULL,vkstate->depth_buffer_image);
@@ -512,9 +520,11 @@ void generate_renderpass(vk_state *vkstate) {
 	{ //render pass info
 		VkAttachmentDescription *attachments;
 		{ //attachment description
-			attachments = calloc(sizeof(VkAttachmentDescription),2);
+			//multisampled color attachment
+			//TODO: warning, max_sample_count is the max. often, overkill.
+			attachments = calloc(sizeof(VkAttachmentDescription),3);
 			attachments[0].format = vkstate->swapchain_info->imageFormat;
-			attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+			attachments[0].samples = vkstate->max_sample_count;
 			attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 			attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -523,26 +533,42 @@ void generate_renderpass(vk_state *vkstate) {
 			attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 			//depth buffer attachment
 			attachments[1].format = VK_FORMAT_D32_SFLOAT;
-			attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+			attachments[1].samples = vkstate->max_sample_count;
 			attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 			attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+			//resolved attachment
+			attachments[2].format = vkstate->swapchain_info->imageFormat;
+			attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+			attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			attachments[2].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+
+
 		}
 		VkSubpassDescription * subpasses;
 		{ //subpass description
 			subpasses = calloc(sizeof(VkSubpassDescription),1);
 			subpasses->pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 			subpasses->colorAttachmentCount = 1;
-			VkAttachmentReference * ref = malloc(sizeof(VkAttachmentReference)*2);
+			VkAttachmentReference * ref = malloc(sizeof(VkAttachmentReference)*3);
 			ref[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 			ref[0].attachment = 0;
 			ref[1].layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 			ref[1].attachment = 1;
+			ref[2].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			ref[2].attachment = 2;
 			subpasses->pColorAttachments = &ref[0];
 			subpasses->pDepthStencilAttachment = &ref[1];
+			subpasses->pResolveAttachments = &ref[2];
 		}
 		VkSubpassDependency * dependency;
 		{ //subpass dependency
@@ -556,7 +582,7 @@ void generate_renderpass(vk_state *vkstate) {
 		}
 		VkRenderPassCreateInfo *render_pass_info = calloc(sizeof(VkRenderPassCreateInfo),1);
 		render_pass_info->sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		render_pass_info->attachmentCount = 2;
+		render_pass_info->attachmentCount = 3;
 		render_pass_info->pAttachments = attachments;
 		render_pass_info->subpassCount = 1;
 		render_pass_info->pSubpasses = subpasses;
@@ -569,7 +595,7 @@ void generate_renderpass(vk_state *vkstate) {
 }
 void generate_imageviews(vk_state *vkstate) {
 	vkstate->imageview_infos = calloc(sizeof(VkImageViewCreateInfo)*vkstate->swapchain_imagecount,1);
-	vkstate->imageviews = malloc(sizeof(VkImageView)*vkstate->swapchain_imagecount);
+	vkstate->resolve_imageviews = malloc(sizeof(VkImageView)*vkstate->swapchain_imagecount);
 	for (uint32_t i = 0; i < vkstate->swapchain_imagecount; i++) {
 		vkstate->imageview_infos[i].sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		vkstate->imageview_infos[i].image = vkstate->swapchain_images[i];
@@ -587,8 +613,67 @@ void generate_imageviews(vk_state *vkstate) {
 			.baseArrayLayer = 0,
 			.layerCount = 1,
 		};
-		vkCreateImageView(vkstate->log_dev, &vkstate->imageview_infos[i], NULL, &(vkstate->imageviews[i]));
+		vkCreateImageView(vkstate->log_dev, &vkstate->imageview_infos[i], NULL, &(vkstate->resolve_imageviews[i]));
 	}
+
+	vkstate->imageviews = malloc(sizeof(VkImageView)*vkstate->swapchain_imagecount);
+		for (uint32_t i = 0; i < vkstate->swapchain_imagecount; i++) {
+			VkImageCreateInfo image_create_info = {0};
+			image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+			image_create_info.imageType = VK_IMAGE_TYPE_2D;
+			image_create_info.format = vkstate->swapchain_info->imageFormat; 
+			image_create_info.extent.width = vkstate->swapchain_info->imageExtent.width;
+			image_create_info.extent.height = vkstate->swapchain_info->imageExtent.height;
+			image_create_info.extent.depth = 1;
+			image_create_info.mipLevels = 1;
+			image_create_info.arrayLayers = 1;
+			image_create_info.samples = vkstate->max_sample_count;
+			image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+			image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+			image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			VkImage msaa_image;
+			vkCreateImage(vkstate->log_dev, &image_create_info, NULL, &msaa_image);
+			VkMemoryRequirements mem_req;
+			vkGetImageMemoryRequirements(vkstate->log_dev, msaa_image, &mem_req);
+			uint32_t mem_index = find_memory_type(mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			VkMemoryAllocateInfo alloc_info = {0};
+			alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			alloc_info.allocationSize = mem_req.size;
+			alloc_info.memoryTypeIndex = mem_index;
+			VkDeviceMemory msaa_image_memory;
+			VkResult result = vkAllocateMemory(vkstate->log_dev, &alloc_info, NULL, &msaa_image_memory);
+			CHECK_ERROR(result,"Failed to allocate memory for multisampling\n");
+			vkBindImageMemory(vkstate->log_dev, msaa_image, msaa_image_memory, 0);
+			// VkBindImageMemory(vkstate->log_dev, msaa_image, msaa_image_memory);
+
+
+
+
+
+			vkstate->imageview_infos[i].sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			vkstate->imageview_infos[i].image = msaa_image;
+			vkstate->imageview_infos[i].viewType = VK_IMAGE_VIEW_TYPE_2D;
+			vkstate->imageview_infos[i].format = VK_FORMAT_B8G8R8A8_SRGB;
+			vkstate->imageview_infos[i].components = (VkComponentMapping){
+				.r=VK_COMPONENT_SWIZZLE_IDENTITY,
+				.g=VK_COMPONENT_SWIZZLE_IDENTITY,
+				.b=VK_COMPONENT_SWIZZLE_IDENTITY,
+				.a=VK_COMPONENT_SWIZZLE_IDENTITY};
+			vkstate->imageview_infos[i].subresourceRange = (VkImageSubresourceRange) {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+			};
+			vkCreateImageView(vkstate->log_dev, &vkstate->imageview_infos[i], NULL, &(vkstate->imageviews[i]));
+		}
+
+
+
+
+
 	vkstate->depth_buffer_image_view_create_info = calloc(sizeof(VkImageViewCreateInfo),1);
 	vkstate->depth_buffer_image_view_create_info->sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	vkstate->depth_buffer_image_view_create_info->format = VK_FORMAT_D32_SFLOAT;
@@ -613,13 +698,14 @@ void generate_framebuffers(vk_state *vkstate) {
 	vkstate->framebuffer_infos = calloc(sizeof(VkFramebufferCreateInfo)*vkstate->swapchain_imagecount,1);
 	vkstate->framebuffers = malloc(sizeof(VkFramebuffer)*vkstate->swapchain_imagecount);
 	for (uint32_t i = 0; i < vkstate->swapchain_imagecount; i++) {
-		VkImageView *attachments = malloc(sizeof(VkImageView)*2);
+		VkImageView *attachments = malloc(sizeof(VkImageView)*3);
 		attachments[0] = vkstate->imageviews[i];
 		attachments[1] = *vkstate->depth_buffer_image_view;
+		attachments[2] = vkstate->resolve_imageviews[i];
 		vkstate->framebuffer_infos[i].pAttachments = attachments;
 		vkstate->framebuffer_infos[i].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		vkstate->framebuffer_infos[i].renderPass = *vkstate->render_pass;
-		vkstate->framebuffer_infos[i].attachmentCount = 2;
+		vkstate->framebuffer_infos[i].attachmentCount = 3;
 		// vkstate->framebuffer_infos[i].pAttachments = &(vkstate->imageviews[i]);
 		vkstate->framebuffer_infos[i].width = vkstate->swapchain_info->imageExtent.width;
 		vkstate->framebuffer_infos[i].height = vkstate->swapchain_info->imageExtent.height;
@@ -758,9 +844,9 @@ void generate_graphics_pipeline(vk_state *vkstate) {
 	{ //multisample state create info
 		vkstate->pipeline_multisample_state_create_info = calloc(sizeof(VkPipelineMultisampleStateCreateInfo),1);
 		vkstate->pipeline_multisample_state_create_info->sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-		vkstate->pipeline_multisample_state_create_info->rasterizationSamples = 1;
+		vkstate->pipeline_multisample_state_create_info->rasterizationSamples = vkstate->max_sample_count;
 		//sample shading. Don't need it right now, could be fun.
-		vkstate->pipeline_multisample_state_create_info->sampleShadingEnable = VK_FALSE;
+		vkstate->pipeline_multisample_state_create_info->sampleShadingEnable = VK_TRUE;
 		vkstate->pipeline_multisample_state_create_info->minSampleShading = 0.5;
 		//tbh dunno
 		vkstate->pipeline_multisample_state_create_info->alphaToCoverageEnable = VK_FALSE;

@@ -389,14 +389,8 @@ void create_image(void) {
 	}
 	/*
 		things around here have to be made into a callback.
-		the callback for this is "descriptorset_callback", and I'm gonna want swapchain cleanup with "before_swapchain_recreation_callback" similar to what vp.c does.0
+		the callback for this is "descriptorset_callback", and I'm gonna want swapchain cleanup with "before_swapchain_recreation_callback" similar to what vp.c does.
 	*/
-
-
-	// vkstate.num_descriptor_sets++;
-
-
-
 
 	vkstate.num_descriptor_bindings++;
 	texture_descriptor_binding = vkstate.num_descriptor_bindings - 1;
