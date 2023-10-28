@@ -95,6 +95,8 @@ typedef struct {
 	int num_descriptor_bindings;
 	VkDescriptorSet *descriptor_sets;
 
+	int max_anisotropy;
+
 	int num_required_uniform_descriptors;
 	VkDescriptorPool *uniform_descriptor_pool;
 	int num_required_combined_image_sampler_descriptors;

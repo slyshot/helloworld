@@ -5,6 +5,7 @@
 #include "sdl/modules/textures/textures.h"
 #include "sdl/modules/vp/vp.h"
 #include "stb/stb_image.h"
+#include <math.h>
 #include <cglm/cglm.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,14 +118,6 @@ static vec3 vertices[] = {
     {-0.5f, 0.5f, -0.5f},
     {-0.5f, -0.5f, -0.5f}
 };
-//where the cubes are
-// static vec3 positions[] = {
-//     {0.0f, 0.0f, 0.0f},
-//     {0.0f, 1.0f, 0.0f},
-// };
-
-
-
 static vec2 cube_texture_unwrap[] = {
 	//front
 	{128.0f, 0.0f},
@@ -170,9 +163,9 @@ static vec2 cube_texture_unwrap[] = {
 	{192.0f, 0.0f},
 
 };
+static vec3 texture_selectors[289] = { 0};
 
-
-mat4 triangle_models[2] = {0};
+mat4 triangle_models[289] = {0};
 mat4 triangle_vp = {0};
 // vec3 colors[6] = (vec3[6]) {
 // 	{1,0,0},{0,1,0},{0,0,1}, {1,0,0},{0,1,0},{0,0,1}, 
@@ -192,8 +185,8 @@ extern int get_memory_type_index(VkBuffer);
 static int vertices_buffer_index = -1;
 static int texture_buffer_index = -1;
 static int positions_buffer_index = -1;
-static int texture_selector_binding = -1;
-
+// static int texture_selector_binding = -1;
+static int texture_selector_buffer_index = -1;
 void create_buffers(void);
 
 VkCommandBuffer *secondary_command_buffers;
@@ -223,7 +216,7 @@ VkSampler texture_sampler;
 static int texture_descriptor_binding = -1; 
 VkBuffer *staging_buffer;
 
-int selector_buffer_index;
+// int selector_buffer_index;
 VkBuffer *descriptor_buffer;
 // void create_selector_buffer(void) {
 
@@ -264,12 +257,13 @@ void write_command_buffers(void) {
 		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], vertices_binding, 1, &vkstate.buffers[vertices_buffer_index], offsets);
 		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], texture_vertex_binding, 1, &vkstate.buffers[texture_buffer_index], offsets);
 		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], positions_binding, 1, &vkstate.buffers[positions_buffer_index], offsets);
+		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], texture_selector_binding, 1, &vkstate.buffers[texture_selector_buffer_index], offsets);
 
 
 
 		//WARNING currently, vertices is an array, not a pointer. This means sizeof(vertices) gives the size of the /whole thing/, not just the size of a pointer.
 		//replace this if/when dynamic memroy allocatino is being used!
-		vkCmdDraw(secondary_command_buffers[buffer_index], 36, 2, 0, 0);
+		vkCmdDraw(secondary_command_buffers[buffer_index], 36, 289, 0, 0);
 		// vkCmdDraw(vkstate.cmd_buffers[buffer_index], sizeof(vertices)/sizeof(vertices[0]), 1, 0, 0);
 		//now im just using a number. again, it needs to be the size of the whole array
 		vkEndCommandBuffer(secondary_command_buffers[buffer_index]);
@@ -285,7 +279,7 @@ unsigned long long read_image(char *filename, unsigned char **out) {
 	}
 	return width*height*channels;
 }
-
+#define MIP_LEVELS(width, height) (uint32_t)floor(log2(fmax(width, height))) + 1;
 void create_image(void) {
 	if (texture_descriptor_binding != -1) return;
 	// printf("GOT HERE!\n");
@@ -295,11 +289,11 @@ void create_image(void) {
 	image_info.imageType = VK_IMAGE_TYPE_2D;
 	image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_info.extent = (VkExtent3D){.width = 384, .height = 256, .depth = 1};
-	image_info.mipLevels = 1;
+	image_info.mipLevels = MIP_LEVELS(image_info.extent.width,image_info.extent.height);
 	image_info.arrayLayers = 1;
 	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-	image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	image_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	VkResult result = vkCreateImage(vkstate.log_dev, &image_info, NULL, &texture_image);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Unable to create texture image, Errnum %d\n",result);
@@ -366,7 +360,7 @@ void create_image(void) {
 	image_view_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
 	image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	image_view_create_info.components = (VkComponentMapping){.r = VK_COMPONENT_SWIZZLE_IDENTITY, .g = VK_COMPONENT_SWIZZLE_IDENTITY, .b = VK_COMPONENT_SWIZZLE_IDENTITY, .a = VK_COMPONENT_SWIZZLE_IDENTITY};
-	image_view_create_info.subresourceRange = (VkImageSubresourceRange) {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1};
+	image_view_create_info.subresourceRange = (VkImageSubresourceRange) {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = image_info.mipLevels, .baseArrayLayer = 0, .layerCount = 1};
 	vkCreateImageView(vkstate.log_dev, &image_view_create_info, NULL, &texture_image_view);
 
 	VkSamplerCreateInfo sampler_create_info = {0};
@@ -376,15 +370,17 @@ void create_image(void) {
 	sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-	sampler_create_info.anisotropyEnable = VK_FALSE;
-	sampler_create_info.maxAnisotropy = 0;
+	sampler_create_info.anisotropyEnable = VK_TRUE;
+	sampler_create_info.maxAnisotropy = vkstate.max_anisotropy;
+	sampler_create_info.minLod = 0;
+	sampler_create_info.maxLod = image_info.mipLevels;
 	// sampler_create_info.anisotropyEnable = VK_TRUE;
 	// sampler_create_info.maxAnisotropy = 16;
 	sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 	sampler_create_info.unnormalizedCoordinates = VK_FALSE;
 	sampler_create_info.compareEnable = VK_FALSE;
 	sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
-	sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
 
 	result = vkCreateSampler(vkstate.log_dev, &sampler_create_info, NULL, &texture_sampler);
@@ -411,22 +407,22 @@ void create_image(void) {
     texture_image_sampler_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     texture_image_sampler_layout_binding.pImmutableSamplers = NULL;
 
-	vkstate.num_descriptor_bindings++;
-	texture_selector_binding = vkstate.num_descriptor_bindings - 1;
-	VkDescriptorSetLayoutBinding texture_selector_layout_binding = {0};
-    texture_selector_layout_binding.binding = texture_selector_binding;
-    texture_selector_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    texture_selector_layout_binding.descriptorCount = 1;
-    texture_selector_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    texture_selector_layout_binding.pImmutableSamplers = NULL;
+	// vkstate.num_descriptor_bindings++;
+	// texture_selector_binding = vkstate.num_descriptor_bindings - 1;
+	// VkDescriptorSetLayoutBinding texture_selector_layout_binding = {0};
+    // texture_selector_layout_binding.binding = texture_selector_binding;
+    // texture_selector_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    // texture_selector_layout_binding.descriptorCount = 1;
+    // texture_selector_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    // texture_selector_layout_binding.pImmutableSamplers = NULL;
 
 
 
 
 	VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {0};
 	descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	descriptor_set_layout_create_info.bindingCount = 2;
-	descriptor_set_layout_create_info.pBindings = (VkDescriptorSetLayoutBinding[]){texture_image_sampler_layout_binding, texture_selector_layout_binding};
+	descriptor_set_layout_create_info.bindingCount = 1;
+	descriptor_set_layout_create_info.pBindings = (VkDescriptorSetLayoutBinding[]){texture_image_sampler_layout_binding};
 	// VkDescriptorSetLayout descriptor_set_layout;
 	vkstate.num_descriptor_set_layouts++;
 	vkstate.descriptor_set_layouts = realloc(vkstate.descriptor_set_layouts, sizeof(VkDescriptorSetLayout)*vkstate.num_descriptor_set_layouts);
@@ -451,50 +447,50 @@ void create_image(void) {
 
 
 	//make selector buffer
-	vkstate.num_buffers++;
-	selector_buffer_index = vkstate.num_buffers - 1;
+	// vkstate.num_buffers++;
+	// selector_buffer_index = vkstate.num_buffers - 1;
 
-	VkBufferCreateInfo selector_create_buffer_info = {0};
-	selector_create_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	selector_create_buffer_info.size = sizeof(vec3);
-	selector_create_buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-	selector_create_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	vkstate.buffers = realloc(vkstate.buffers, vkstate.num_buffers*sizeof(VkBuffer));
-	result = vkCreateBuffer(vkstate.log_dev, &selector_create_buffer_info, NULL, &vkstate.buffers[selector_buffer_index]);
-	CHECK_ERROR(result, "Unable to create vp buffer. Errno %d\n",result);
+	// VkBufferCreateInfo selector_create_buffer_info = {0};
+	// selector_create_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	// selector_create_buffer_info.size = sizeof(vec3);
+	// selector_create_buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	// selector_create_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	// vkstate.buffers = realloc(vkstate.buffers, vkstate.num_buffers*sizeof(VkBuffer));
+	// result = vkCreateBuffer(vkstate.log_dev, &selector_create_buffer_info, NULL, &vkstate.buffers[selector_buffer_index]);
+	// CHECK_ERROR(result, "Unable to create vp buffer. Errno %d\n",result);
 
 	//create buffer memory
-	vkstate.buffer_mem = realloc(vkstate.buffer_mem, vkstate.num_buffers*sizeof(VkDeviceMemory));
-	VkMemoryRequirements mem_req;
-	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[selector_buffer_index], &mem_req);
-	VkMemoryAllocateInfo alloc_info = {0};
-	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.allocationSize = mem_req.size;
-	alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[selector_buffer_index]);
-	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL, &vkstate.buffer_mem[selector_buffer_index]);
-	if (result != VK_SUCCESS) {
-		LOG_ERROR("Unable to allocate memory for vp buffer. Errno %d\n",result);
-	}
+	// vkstate.buffer_mem = realloc(vkstate.buffer_mem, vkstate.num_buffers*sizeof(VkDeviceMemory));
+	// VkMemoryRequirements mem_req;
+	// vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[selector_buffer_index], &mem_req);
+	// VkMemoryAllocateInfo alloc_info = {0};
+	// alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	// alloc_info.allocationSize = mem_req.size;
+	// alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[selector_buffer_index]);
+	// result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL, &vkstate.buffer_mem[selector_buffer_index]);
+	// if (result != VK_SUCCESS) {
+	// 	LOG_ERROR("Unable to allocate memory for vp buffer. Errno %d\n",result);
+	// }
 
-	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[selector_buffer_index], vkstate.buffer_mem[selector_buffer_index], 0);
+	// vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[selector_buffer_index], vkstate.buffer_mem[selector_buffer_index], 0);
 
-	VkDescriptorBufferInfo descriptor_buffer_info = {0};
-	descriptor_buffer_info.buffer = vkstate.buffers[vkstate.num_buffers-1];
-	descriptor_buffer_info.offset = 0;
-	descriptor_buffer_info.range = sizeof(vec3);
+	// VkDescriptorBufferInfo descriptor_buffer_info = {0};
+	// descriptor_buffer_info.buffer = vkstate.buffers[vkstate.num_buffers-1];
+	// descriptor_buffer_info.offset = 0;
+	// descriptor_buffer_info.range = sizeof(vec3);
 
 	
 	// vkstate.num_buffers++;
 	// VkBufferCreateInfo selector_buffer = {}
 
-	VkWriteDescriptorSet selector_descriptor_write = {0};
-	selector_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	selector_descriptor_write.dstSet = vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1];
-	selector_descriptor_write.dstBinding = texture_selector_binding;
-	selector_descriptor_write.dstArrayElement = 0;
-	selector_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	selector_descriptor_write.descriptorCount = 1;
-	selector_descriptor_write.pBufferInfo = &descriptor_buffer_info;
+	// VkWriteDescriptorSet selector_descriptor_write = {0};
+	// selector_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	// selector_descriptor_write.dstSet = vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1];
+	// selector_descriptor_write.dstBinding = texture_selector_binding;
+	// selector_descriptor_write.dstArrayElement = 0;
+	// selector_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	// selector_descriptor_write.descriptorCount = 1;
+	// selector_descriptor_write.pBufferInfo = &descriptor_buffer_info;
 
 
 
@@ -513,16 +509,7 @@ void create_image(void) {
 	descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	descriptor_write.descriptorCount = 1;
 	descriptor_write.pImageInfo = &imageInfo;
-	vkUpdateDescriptorSets(vkstate.log_dev, 2, (VkWriteDescriptorSet[]){descriptor_write, selector_descriptor_write}, 0, NULL);
-
-	void *data;
-	vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[selector_buffer_index], 0, sizeof(vec3), 0, &data);
-	memcpy(data, (vec3){1,2,2}, sizeof(vec3));
-	vkUnmapMemory(vkstate.log_dev, vkstate.buffer_mem[selector_buffer_index]);
-
-
-
-
+	vkUpdateDescriptorSets(vkstate.log_dev, 1, (VkWriteDescriptorSet[]){descriptor_write}, 0, NULL);
 
 
 	// VkSamplerCreateInfo
@@ -600,7 +587,7 @@ void create_buffers(void) {
 	/* create second buffer -- copy most of the data from the first */
 	VkBufferCreateInfo positions_buffer_info = vertices_buffer_info;
 	positions_buffer_info.size = sizeof(triangle_models);
-	vkCreateBuffer(vkstate.log_dev, &texture_buffer_info, NULL, &vkstate.buffers[positions_buffer_index]);
+	vkCreateBuffer(vkstate.log_dev, &positions_buffer_info, NULL, &vkstate.buffers[positions_buffer_index]);
 	CHECK_ERROR(result, "Failed to create texture sampling vertex buffer. Erro num %d\n", result);
 	/* deal with second buffers memory */
 	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[positions_buffer_index], &mem_req);
@@ -618,6 +605,36 @@ void create_buffers(void) {
 
 
 
+	/* resize relevant arrays */
+	vkstate.num_buffers++;
+	vkstate.buffer_mem = realloc(vkstate.buffer_mem, sizeof(VkDeviceMemory)*vkstate.num_buffers);
+	vkstate.buffer_data	= realloc(vkstate.buffer_data, sizeof(void *)*vkstate.num_buffers);
+	vkstate.buffers = realloc(vkstate.buffers, sizeof(VkBuffer)*vkstate.num_buffers);
+	texture_selector_buffer_index = vkstate.num_buffers - 1;
+	/* create second buffer -- copy most of the data from the first */
+	VkBufferCreateInfo texture_selector_buffer_info = vertices_buffer_info;
+	texture_selector_buffer_info.size = sizeof(texture_selectors);
+	vkCreateBuffer(vkstate.log_dev, &texture_selector_buffer_info, NULL, &vkstate.buffers[texture_selector_buffer_index]);
+	CHECK_ERROR(result, "Failed to create texture sampling vertex buffer. Erro num %d\n", result);
+	/* deal with second buffers memory */
+	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[texture_selector_buffer_index], &mem_req);
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_req.size;
+	alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[texture_selector_buffer_index]);
+	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL,&vkstate.buffer_mem[texture_selector_buffer_index]);
+	CHECK_ERROR(result, "error allocating memory. error num %d\n",result);
+	// if (result != VK_SUCCESS) exit(-1);
+	/* bind it, map it, copy it */
+	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[texture_selector_buffer_index], vkstate.buffer_mem[texture_selector_buffer_index], 0);
+	// vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[texture_selector_buffer_index],  0, texture_selector_buffer.size, 0, &vkstate.buffer_data[texture_selector_buffer_index]);
+	// memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models[1], positions_buffer_info.size);
+
+	// void *data;
+	vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[texture_selector_buffer_index], 0, mem_req.size, 0, &vkstate.buffer_data[texture_selector_buffer_index]);
+	// memcpy(data, texture_selectors, sizeof(texture_selectors));
+	//TODO marking this because it's taking sizeof(arry) when i will be using a pointer for similar things later. Gonna start
+	//setting up the move from arrays to pointers now
+	// vkUnmapMemory(vkstate.log_dev, vkstate.buffer_mem[texture_selector_buffer_index]);
 
 
 
@@ -688,24 +705,104 @@ void write_image_copy_command_buffer() {
 		};
 		region.imageExtent = (VkExtent3D){.width = 384, .depth = 1, .height = 256};
 		vkCmdCopyBufferToImage(*init_command_buffer, *staging_buffer, texture_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-		VkImageMemoryBarrier barrier_to_shader_read = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.image = texture_image,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-			},
-		};
-		vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier_to_shader_read);
+
+		// vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &mip_barrier);
+		// 		   
+		// 		   
+		int mipWidth = region.imageExtent.width;
+		int mipHeight = region.imageExtent.height;
+		int mip_levels = (uint32_t)floor(log2(fmax(mipWidth, mipHeight))) + 1;
+
+		for (int i = 1; i < mip_levels; i++) {
+			VkImageMemoryBarrier mip_barrier = {
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.image = texture_image,
+				.subresourceRange = (VkImageSubresourceRange) {
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.baseMipLevel = i - 1,
+					.levelCount = 1,
+					.baseArrayLayer = 0,
+					.layerCount = 1,
+				},
+			};
+			//set up future commands so that the mipLevel i-1 is readable
+			vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &mip_barrier);
+			mip_barrier.subresourceRange.baseMipLevel = i;
+			mip_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			mip_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			mip_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			mip_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			//set up future commands so that the mipLevel i is writable
+			vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &mip_barrier);
+
+		    VkImageBlit blit = {0};
+
+		    blit.srcOffsets[0] = (VkOffset3D){0, 0, 0};
+
+		    blit.srcOffsets[1] = (VkOffset3D){mipWidth, mipHeight, 1};
+		    blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		    blit.srcSubresource.mipLevel = i - 1;
+		    blit.srcSubresource.baseArrayLayer = 0;
+		    blit.srcSubresource.layerCount = 1;
+
+		    blit.dstOffsets[0] = (VkOffset3D){0, 0, 0};
+		    blit.dstOffsets[1] = (VkOffset3D){mipWidth / 2, mipHeight / 2, 1};
+		    blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		    blit.dstSubresource.mipLevel = i;
+		    blit.dstSubresource.baseArrayLayer = 0;
+		    blit.dstSubresource.layerCount = 1;
+		    //may want near filtering
+		    vkCmdBlitImage(*init_command_buffer, texture_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, texture_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR );
+		    mipWidth = mipWidth / 2 == 0 ? 1 : mipWidth/2;
+		    mipHeight = mipHeight / 2 == 0 ? 1 : mipHeight/2;
+		}
+		for (int i = 0; i < mip_levels; i++) {
+		    VkImageMemoryBarrier mip_barrier = {
+		        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		        .srcAccessMask = (i < mip_levels - 1) ? VK_ACCESS_TRANSFER_READ_BIT : VK_ACCESS_TRANSFER_WRITE_BIT,
+		        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+		        .oldLayout = (i < mip_levels - 1) ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		        .image = texture_image,
+		        .subresourceRange = (VkImageSubresourceRange) {
+		            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		            .baseMipLevel = i,
+		            .levelCount = 1,
+		            .baseArrayLayer = 0,
+		            .layerCount = 1,
+		        },
+		    };
+		    vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &mip_barrier);
+		}
+
+
+
+		// VkImageMemoryBarrier barrier_to_shader_read = {
+		// 	.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		// 	.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+		// 	.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+		// 	.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		// 	.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		// 	.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		// 	.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		// 	.image = texture_image,
+		// 	.subresourceRange = (VkImageSubresourceRange) {
+		// 		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		// 		.baseMipLevel = 0,
+		// 		.levelCount = 1,
+		// 		.baseArrayLayer = 0,
+		// 		.layerCount = 1,
+		// 	},
+		// };
+		// vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier_to_shader_read);
 	vkEndCommandBuffer(*init_command_buffer);
 
 }
@@ -720,26 +817,58 @@ void execute_command_buffer_callback(int index) {
 	vkCmdExecuteCommands(vkstate.cmd_buffers[index], 1, init_command_buffer);
 }
 
-void triangle_init() {
+void triangle_init(void) {
 	create_buffers();
 	create_image();
-	glm_mat4_identity(triangle_models[0]);
-	glm_mat4_identity(triangle_models[1]);
-	glm_translate(triangle_models[0], (vec3){0,0,5});
-	glm_translate(triangle_models[1], (vec3){0,1,3});
-	glm_scale(triangle_models[0], (vec3){0.5f,0.5f,0.5f});
+	for (int i = 0; i < 17 ; i++) {
+		for (int j = 0; j < 17; j++) {
+			glm_mat4_identity(triangle_models[i*17 + j]);
+			glm_translate(triangle_models[i*17 + j], (vec3){i,2,j});
+			memcpy((vec3 *)vkstate.buffer_data[texture_selector_buffer_index] + i*17 + j, (vec3[]){{1, 1, 2},{1, 2, 2},{2, 1, 2},{2, 2, 2}}[(i*17 + j)%4], sizeof(vec3));
+		}
+	}
 	memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models, sizeof(triangle_models));
+	// glm_mat4_identity(triangle_models[0]);
+	// glm_mat4_identity(triangle_models[1]);
+	// glm_mat4_identity(triangle_models[2]);
+	// glm_translate(triangle_models[0], (vec3){0,0,5});
+	// glm_translate(triangle_models[1], (vec3){0,1,3});
+	// glm_translate(triangle_models[2], (vec3){1,1,1});
+	// glm_scale(triangle_models[0], (vec3){0.5f,0.5f,0.5f});
 	create_command_buffers();
 	write_image_copy_command_buffer();
 	write_command_buffers();
 }
+static int counter = 0;
 void triangle_update(int dt) {
-	glm_rotate(triangle_models[0], .005f, (vec3){1,1,1});
-	memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models, sizeof(triangle_models));
+	// glm_rotate(triangle_models[0], .005f, (vec3){1,1,1});
+	counter += dt;
+	float fctr = (float)counter;
+	for (int i = 0; i < 17 ; i++) {
+		for (int j = 0; j < 17; j++) {
+			float fi = (float)i;
+			float fj = (float)j;
+			vec3 translation = {0,sin( (fctr/100 + sin((fi*17 + fj))*10  )/4)/30,0};
+			glm_translate(triangle_models[i*17 + j], translation);
+			memcpy((mat4*)vkstate.buffer_data[positions_buffer_index]+(i*17 + j), triangle_models[i*17 + j], sizeof(triangle_models[0]));
+			glm_translate(triangle_models[i*17 + j], (vec3){-translation[0], -translation[1], -translation[2]});
+
+		}
+	}
+
+	// for (int i = 0; i < 17 ; i++) {
+	// 	for (int j = 0; j < 17; j++) {
+	// 		glm_translate(triangle_models[i*17 + j], (vec3){0,-sin((float)((float)counter + (float)(i*17 + j))/200)/5 - sin((float)((float)i + (float)j/10.0f + (float)counter/10)/100),0});
+	// 	}
+	// }
+
+
+
 	void *data;
 	vkMapMemory(vkstate.log_dev, vp_buffer_memory, 0, sizeof(mat4), 0, &data);
 	glm_mat4_mulN((mat4 *[]){&projection, &view}, 2, data);
 	vkUnmapMemory(vkstate.log_dev, vp_buffer_memory);
+
 
 }
 void triangle_eventhandle(SDL_Event *e) {

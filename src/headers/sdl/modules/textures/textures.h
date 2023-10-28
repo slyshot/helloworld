@@ -1,1 +1,2 @@
 extern int texture_vertex_binding;
+extern int texture_selector_binding;

@@ -18,6 +18,33 @@
 #define CGLM_FORCE_DEPTH_ZERO_TO_ONE
 #define CGLM_FORCE_LEFT_HANDED
 #include <cglm/cglm.h>
+
+
+#define REGISTER_VOID_CALLBACK(callback_name) do { \
+		for (int i = 0; modules[i] != NULL; i++) { \
+			if (modules[i]->shared_data == NULL) continue; \
+			comms *casted_module = ((comms *)(modules[i]->shared_data)); \
+			for (int j = 0; j < casted_module->num_comms; j++) { \
+				if (casted_module->comms[j].data_type == callback_name) { \
+					casted_module->comms[j].fn_ptr(); \
+				} \
+			} \
+		} \
+	} while(0);
+#define REGISTER_CALLBACK(callback_name, type, arg) do { \
+		for (int i = 0; modules[i] != NULL; i++) { \
+			if (modules[i]->shared_data == NULL) continue; \
+			comms *casted_module = ((comms *)(modules[i]->shared_data)); \
+			for (int j = 0; j < casted_module->num_comms; j++) { \
+				if (casted_module->comms[j].data_type == callback_name) { \
+					void (*execute_fn)(type) = (void (*)(type))casted_module->comms[j].fn_ptr; \
+					execute_fn(arg); \
+				} \
+			} \
+		} \
+	} while (0);
+
+
 // #define STORE(NON_STRUCT_PTR,TYPE,STRUCT) do { TYPE * ptr = malloc(sizeof(TYPE)); memcpy(ptr,NON_STRUCT_PTR,sizeof(TYPE)); STRUCT.NON_STRUCT_PTR = ptr; } while 0
 #define CLAMP(x, lo, hi)    ((x) < (lo) ? (lo) : (x) > (hi) ? (hi) : (x))
 #include "handle_modules/module.h"
@@ -95,14 +122,10 @@ That way, you could have a complete deviation (Basically just setting the info a
 /*
 in progress of dealing with depth. already created the createinfo for the graphics pipeline, must now make a framebuffer for it and add that (As well as everythnig that will need to go with it) to the render pass.
 but im too tired. peace out.
-
-
 */
 #define VERTEX_SHADER_PATH "./vert.spv"
 #define FRAGMENT_SHADER_PATH "./frag.spv"
 vk_state vkstate;
-//future speaking: THIS is what I decide to make it's own function?!
-//Verify that, given an extension list and a requested extension, that the requested extension is in the extension list.
 void read_file(char *path, int *_size, uint32_t **out) {
 	FILE * file=  fopen(path, "rb");
 	fseek(file, 0, SEEK_END);
@@ -115,6 +138,8 @@ void read_file(char *path, int *_size, uint32_t **out) {
 	*out = file_data;
 }
 
+//future speaking: THIS is what I decide to make it's own function?!
+//Verify that, given an extension list and a requested extension, that the requested extension is in the extension list.
 int has(VkExtensionProperties *properties, uint32_t property_count, char* requested_extension) {
 	for (uint32_t i = 0; i < property_count; i++) {
 		if (strcmp(properties[i].extensionName, requested_extension) == 0) {
@@ -290,6 +315,7 @@ void generate_physical_device(vk_state *vkstate) {
 				if (surface_supported && props.deviceType & VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
 					found_device = 1;
 					vkstate->phys_dev = devices[i];
+					vkstate->max_anisotropy = props.limits.maxSamplerAnisotropy;
 					break;
 				}
 			}
@@ -384,7 +410,13 @@ void generate_logical_device(vk_state *vkstate) {
 		device_create_info->pQueueCreateInfos = device_queue_create_info;
 		device_create_info->ppEnabledExtensionNames = (const char**) req_exts;
 		device_create_info->enabledExtensionCount = enabled_extension_count;
-		device_create_info->pEnabledFeatures = NULL;
+
+
+
+		VkPhysicalDeviceFeatures deviceFeatures;
+		vkGetPhysicalDeviceFeatures(vkstate->phys_dev, &deviceFeatures);
+		deviceFeatures.samplerAnisotropy = VK_TRUE;
+		device_create_info->pEnabledFeatures = &deviceFeatures;
 		vkstate->device_create_info = device_create_info;
 	}
 	vkCreateDevice(vkstate->phys_dev,vkstate->device_create_info,NULL,&vkstate->log_dev);
@@ -665,16 +697,16 @@ void generate_graphics_pipeline(vk_state *vkstate) {
 
 		vkstate->pipeline_vertex_input_state_create_info = calloc(sizeof(VkPipelineVertexInputStateCreateInfo),1);
 		vkstate->pipeline_vertex_input_state_create_info->sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-		for (int i = 0; modules[i] != NULL; i++) {
-			if (modules[i]->shared_data == NULL) continue;
-			comms *casted_module = ((comms *)(modules[i]->shared_data));
-			for (int j = 0; j < casted_module->num_comms; j++) {
-				if (casted_module->comms[j].data_type == vertex_attribute_callback) {
-					casted_module->comms[j].fn_ptr();
-				}
-			}
-		}
+		REGISTER_VOID_CALLBACK(vertex_attribute_callback);
+		// for (int i = 0; modules[i] != NULL; i++) {
+		// 	if (modules[i]->shared_data == NULL) continue;
+		// 	comms *casted_module = ((comms *)(modules[i]->shared_data));
+		// 	for (int j = 0; j < casted_module->num_comms; j++) {
+		// 		if (casted_module->comms[j].data_type == vertex_attribute_callback) {
+		// 			casted_module->comms[j].fn_ptr();
+		// 		}
+		// 	}
+		// }
 
 
 		vkstate->pipeline_vertex_input_state_create_info->vertexBindingDescriptionCount = vkstate->num_vertex_input_binding_desc;
@@ -778,53 +810,59 @@ void generate_graphics_pipeline(vk_state *vkstate) {
 		vkstate->depth_stencil_state_create_info->minDepthBounds = 0.0f;
 		vkstate->depth_stencil_state_create_info->maxDepthBounds = 1.0f;
 	}
-	{ //layout create info
-		for (int i = 0; modules[i] != NULL; i++) {
-			if (modules[i]->shared_data == NULL) continue;
-			comms *casted_module = ((comms *)(modules[i]->shared_data));
-			for (int j = 0; j < casted_module->num_comms; j++) {
-				if (casted_module->comms[j].data_type == descriptorset_callback) {
-					//This is clunky, and there's certainly a better way to do it. 
-					//but I don't want to do per-module pools, so I'm doing it this way for now.
-					//TODO: make it nicer. please.
-					if (vkstate->num_required_uniform_descriptors != 0) {
-						vkstate->uniform_descriptor_pool = malloc(sizeof(VkDescriptorPool));
-						VkDescriptorPoolSize pool_size = {0};
-						pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-						pool_size.descriptorCount = vkstate->num_required_uniform_descriptors;
+					// if (vkstate->num_required_uniform_descriptors != 0) {
+		{
+			vkstate->uniform_descriptor_pool = malloc(sizeof(VkDescriptorPool));
+			VkDescriptorPoolSize pool_size = {0};
+			pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			pool_size.descriptorCount = vkstate->num_required_uniform_descriptors;
 
-						VkDescriptorPoolCreateInfo pool_info = {0};
-						pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-						pool_info.poolSizeCount = 1;
-						pool_info.pPoolSizes = &pool_size;
-						pool_info.maxSets = 1;
+			VkDescriptorPoolCreateInfo pool_info = {0};
+			pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+			pool_info.poolSizeCount = 1;
+			pool_info.pPoolSizes = &pool_size;
+			pool_info.maxSets = 1;
 
-						VkResult result = vkCreateDescriptorPool(vkstate->log_dev, &pool_info, NULL, vkstate->uniform_descriptor_pool);
-						if (result != VK_SUCCESS) {
-							LOG_ERROR("Failed to create descriptor pool for vp uniform buffer. Errno %d\n",result);
-						}
-					}
-					if (vkstate->num_required_combined_image_sampler_descriptors != 0) {
-						vkstate->combined_image_sampler_descriptor_pool = malloc(sizeof(VkDescriptorPool));
-						VkDescriptorPoolSize pool_size = {0};
-						pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-						pool_size.descriptorCount = vkstate->num_required_combined_image_sampler_descriptors;
-
-						VkDescriptorPoolCreateInfo pool_info = {0};
-						pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-						pool_info.poolSizeCount = 1;
-						pool_info.pPoolSizes = &pool_size;
-						pool_info.maxSets = 1;
-
-						VkResult result = vkCreateDescriptorPool(vkstate->log_dev, &pool_info, NULL, vkstate->combined_image_sampler_descriptor_pool);
-						if (result != VK_SUCCESS) {
-							LOG_ERROR("Failed to create descriptor pool for vp uniform buffer. Errno %d\n",result);
-						}						
-					}
-					casted_module->comms[j].fn_ptr();
-				}
+			VkResult result = vkCreateDescriptorPool(vkstate->log_dev, &pool_info, NULL, vkstate->uniform_descriptor_pool);
+			if (result != VK_SUCCESS) {
+				LOG_ERROR("Failed to create descriptor pool for vp uniform buffer. Errno %d\n",result);
 			}
 		}
+		{
+		// }
+		// if (vkstate->num_required_combined_image_sampler_descriptors != 0) {
+			vkstate->combined_image_sampler_descriptor_pool = malloc(sizeof(VkDescriptorPool));
+			VkDescriptorPoolSize pool_size = {0};
+			pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			pool_size.descriptorCount = vkstate->num_required_combined_image_sampler_descriptors;
+
+			VkDescriptorPoolCreateInfo pool_info = {0};
+			pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+			pool_info.poolSizeCount = 1;
+			pool_info.pPoolSizes = &pool_size;
+			pool_info.maxSets = 1;
+
+			VkResult result = vkCreateDescriptorPool(vkstate->log_dev, &pool_info, NULL, vkstate->combined_image_sampler_descriptor_pool);
+			if (result != VK_SUCCESS) {
+				LOG_ERROR("Failed to create descriptor pool for vp uniform buffer. Errno %d\n",result);
+			}			
+		}			
+	{ //layout create info
+					// }
+		REGISTER_VOID_CALLBACK(descriptorset_callback);
+		// for (int i = 0; modules[i] != NULL; i++) {
+		// 	if (modules[i]->shared_data == NULL) continue;
+		// 	comms *casted_module = ((comms *)(modules[i]->shared_data));
+		// 	for (int j = 0; j < casted_module->num_comms; j++) {
+		// 		if (casted_module->comms[j].data_type == descriptorset_callback) {
+		// 			//This is clunky, and there's certainly a better way to do it. 
+		// 			//but I don't want to do per-module pools, so I'm doing it this way for now.
+		// 			//TODO: make it nicer. please.
+		// 			casted_module->comms[j].fn_ptr();
+		// 		}
+		// 	}
+		// }
+
 		vkstate->pipeline_layout_create_info = calloc(sizeof(VkPipelineLayoutCreateInfo),1);
 		vkstate->pipeline_layout = calloc(sizeof(VkPipelineLayout),1);
 		vkstate->pipeline_layout_create_info->sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -944,15 +982,16 @@ void vulkan_init(void) {
 	vkstate.num_required_combined_image_sampler_descriptors = 0;
 	vkstate.num_vertex_input_binding_desc = 0;
 	vkstate.num_vertex_input_attribute_desc = 0;
-	for (int i = 0; modules[i] != NULL; i++) {
-		if (modules[i]->shared_data == NULL) continue;
-		comms *casted_module = ((comms *)(modules[i]->shared_data));
-		for (int j = 0; j < casted_module->num_comms; j++) {
-			if (casted_module->comms[j].data_type == before_vulkan_init_callback) {
-				casted_module->comms[j].fn_ptr();
-			}
-		}
-	}
+	REGISTER_VOID_CALLBACK(before_vulkan_init_callback);
+	// for (int i = 0; modules[i] != NULL; i++) {
+	// 	if (modules[i]->shared_data == NULL) continue;
+	// 	comms *casted_module = ((comms *)(modules[i]->shared_data));
+	// 	for (int j = 0; j < casted_module->num_comms; j++) {
+	// 		if (casted_module->comms[j].data_type == before_vulkan_init_callback) {
+	// 			casted_module->comms[j].fn_ptr();
+	// 		}
+	// 	}
+	// }
 
 	vkstate.swapchain = VK_NULL_HANDLE;
 	generate_instance(&vkstate);
@@ -970,15 +1009,16 @@ void vulkan_init(void) {
 	generate_semaphores(&vkstate);
 	generate_fences(&vkstate);
 	// vkstate.render_pass_begin_infos = calloc(sizeof(VkRenderPassBeginInfo),vkstate.cmd_allocate_info->commandBufferCount);
-	for (int i = 0; modules[i] != NULL; i++) {
-		if (modules[i]->shared_data == NULL) continue;
-		comms *casted_module = ((comms *)(modules[i]->shared_data));
-		for (int j = 0; j < casted_module->num_comms; j++) {
-			if (casted_module->comms[j].data_type == after_vulkan_init_callback) {
-				casted_module->comms[j].fn_ptr();
-			}
-		}
-	}
+	REGISTER_VOID_CALLBACK(after_vulkan_init_callback);
+	// for (int i = 0; modules[i] != NULL; i++) {
+	// 	if (modules[i]->shared_data == NULL) continue;
+	// 	comms *casted_module = ((comms *)(modules[i]->shared_data));
+	// 	for (int j = 0; j < casted_module->num_comms; j++) {
+	// 		if (casted_module->comms[j].data_type == after_vulkan_init_callback) {
+	// 			casted_module->comms[j].fn_ptr();
+	// 		}
+	// 	}
+	// }
 
 
 }
@@ -989,18 +1029,20 @@ void vulkan_init(void) {
 int current_frame = 0;
 void recreate_swapchain(vk_state *vkstate) {
 	vkDeviceWaitIdle(vkstate->log_dev);
+	REGISTER_VOID_CALLBACK(before_swapchain_recreation_callback);
+	// for (int i = 0; modules[i] != NULL; i++) {
+	// 	if (modules[i]->shared_data == NULL) continue;
+	// 	comms *casted_module = ((comms *)(modules[i]->shared_data));
+	// 	for (int j = 0; j < casted_module->num_comms; j++) {
+	// 		//lots of things will have changes they want to make when the swapchain gets rebuilt. hence,the callback.
+	// 		if (casted_module->comms[j].data_type == before_swapchain_recreation_callback) {
+	// 			casted_module->comms[j].fn_ptr();
+	// 		}
+	// 	}
+	// }
 	//when recreating the swapchain, you also need to recreate all of it's dependencies.
 	//because you can't remove a swapchain without also invalidating all of it's dependencies, cleanup_swapchain is all that needs to be called.
-	for (int i = 0; modules[i] != NULL; i++) {
-		if (modules[i]->shared_data == NULL) continue;
-		comms *casted_module = ((comms *)(modules[i]->shared_data));
-		for (int j = 0; j < casted_module->num_comms; j++) {
-			//lots of things will have changes they want to make when the swapchain gets rebuilt. hence,the callback.
-			if (casted_module->comms[j].data_type == before_swapchain_recreation_callback) {
-				casted_module->comms[j].fn_ptr();
-			}
-		}
-	}
+	//in terms of 'removing things'
 	cleanup_swapchain(vkstate);
 	generate_swapchain(vkstate);
 	generate_depth_buffer_image(vkstate);
@@ -1008,20 +1050,19 @@ void recreate_swapchain(vk_state *vkstate) {
 	generate_renderpass(vkstate);
 	generate_graphics_pipeline(vkstate);
 	generate_framebuffers(vkstate);
-	// free(vkstate->cmd_begin_info);
-	// vkstate->cmd_begin_info = NULL;
-	// free(vkstate->render_pass_begin_infos);
-	// vkstate->render_pass_begin_infos = NULL;
-	for (int i = 0; modules[i] != NULL; i++) {
-		if (modules[i]->shared_data == NULL) continue;
-		comms *casted_module = ((comms *)(modules[i]->shared_data));
-		for (int j = 0; j < casted_module->num_comms; j++) {
-			if (casted_module->comms[j].data_type == after_swapchain_recreation_callback) {
-				casted_module->comms[j].fn_ptr();
-			}
-		}
-		//other init callbacks can go here
-	}
+
+
+	REGISTER_VOID_CALLBACK(after_swapchain_recreation_callback);
+	// for (int i = 0; modules[i] != NULL; i++) {
+	// 	if (modules[i]->shared_data == NULL) continue;
+	// 	comms *casted_module = ((comms *)(modules[i]->shared_data));
+	// 	for (int j = 0; j < casted_module->num_comms; j++) {
+	// 		if (casted_module->comms[j].data_type == after_swapchain_recreation_callback) {
+	// 			casted_module->comms[j].fn_ptr();
+	// 		}
+	// 	}
+	// 	//other init callbacks can go here
+	// }
 	// Vk
 	// vkResetFences(vkstate->log_dev, 3, vkstate->fences);
 	current_frame = 0;
@@ -1051,16 +1092,7 @@ void vulkan_update(int dt) {
 	cmd_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	vkBeginCommandBuffer(vkstate.cmd_buffers[current_frame], &cmd_begin_info);
 	VkRenderPassBeginInfo render_pass_begin_info = {0};
-	for (int i = 0; modules[i] != NULL; i++) {
-		if (modules[i]->shared_data == NULL) continue;
-		comms *casted_module = ((comms *)(modules[i]->shared_data));
-		for (int j = 0; j < casted_module->num_comms; j++) {
-			if (casted_module->comms[j].data_type == execute_commandbuf_callback) {
-				void (*execute_fn)(int) = (void (*)(int))casted_module->comms[j].fn_ptr;
-				execute_fn(current_frame);
-			}
-		}
-	}
+	REGISTER_CALLBACK(execute_commandbuf_callback, int, current_frame);
 	{ //render pass begin info
 		render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 		render_pass_begin_info.renderPass = *vkstate.render_pass;
@@ -1071,16 +1103,17 @@ void vulkan_update(int dt) {
 		render_pass_begin_info.pClearValues = (VkClearValue[]){ { .color={{1.0f,0.8f,0.6f,1.0f}} }, {.depthStencil = {1.0f,1.0f} }  };
 	}
 	vkCmdBeginRenderPass(vkstate.cmd_buffers[current_frame],&render_pass_begin_info, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-	for (int i = 0; modules[i] != NULL; i++) {
-		if (modules[i]->shared_data == NULL) continue;
-		comms *casted_module = ((comms *)(modules[i]->shared_data));
-		for (int j = 0; j < casted_module->num_comms; j++) {
-			if (casted_module->comms[j].data_type == execute_commandbuf_renderpass_callback) {
-				void (*execute_fn)(int) = (void (*)(int))casted_module->comms[j].fn_ptr;
-				execute_fn(current_frame);
-			}
-		}
-	}
+	REGISTER_CALLBACK(execute_commandbuf_renderpass_callback, int, current_frame)
+	// for (int i = 0; modules[i] != NULL; i++) {
+	// 	if (modules[i]->shared_data == NULL) continue;
+	// 	comms *casted_module = ((comms *)(modules[i]->shared_data));
+	// 	for (int j = 0; j < casted_module->num_comms; j++) {
+	// 		if (casted_module->comms[j].data_type == execute_commandbuf_renderpass_callback) {
+	// 			void (*execute_fn)(int) = (void (*)(int))casted_module->comms[j].fn_ptr;
+	// 			execute_fn(current_frame);
+	// 		}
+	// 	}
+	// }
 	vkCmdEndRenderPass(vkstate.cmd_buffers[current_frame]);
 	vkEndCommandBuffer(vkstate.cmd_buffers[current_frame]);
 
