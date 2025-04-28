@@ -38,7 +38,7 @@ module camera = {
 
 void camera_perspective_reset(void) {
 	float aspect = (float)vkstate.swapchain_info->imageExtent.width / (float)vkstate.swapchain_info->imageExtent.height;
- 	glm_perspective_default(aspect, projection);
+	glm_perspective(45.0f, aspect, 0.1f, 1000.0f, projection);
 }
 void camera_update(int dt) {
 	if (keyboard_state != NULL){
@@ -57,7 +57,6 @@ void camera_update(int dt) {
 		if (keyboard_state[SDL_SCANCODE_D]) {
 			glm_vec3_sub(position, out, position);
 		}
-
 		if (keyboard_state[SDL_SCANCODE_A]) {
 			glm_vec3_add(position, out, position);			
 		}
@@ -78,8 +77,7 @@ void camera_update(int dt) {
 	vec3 right;
     glm_cross(direction, (vec3){0.0f, 1.0f, 0.0f}, right);
     glm_normalize(right);
-    vec3 up;
-	glm_cross(right, direction, up);
+    vec3 up = {0.0f, 1.0f, 0.0f};
 	vec3 target;
 	glm_vec3_add(position, direction, target);
 	glm_lookat(position, target, up, view);

@@ -163,10 +163,11 @@ static vec2 cube_texture_unwrap[] = {
 	{192.0f, 0.0f},
 
 };
-static vec3 texture_selectors[289] = { 0};
-
-mat4 triangle_models[289] = {0};
+int num_cubes = 10000;
+// static vec3 *texture_selectors= NULL;
+mat4 *triangle_models = NULL;
 mat4 triangle_vp = {0};
+
 // vec3 colors[6] = (vec3[6]) {
 // 	{1,0,0},{0,1,0},{0,0,1}, {1,0,0},{0,1,0},{0,0,1}, 
 // };
@@ -247,7 +248,8 @@ void write_command_buffers(void) {
 			cmd_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		}
 		vkBeginCommandBuffer(secondary_command_buffers[buffer_index], &cmd_begin_info);
-
+		vkCmdSetViewport(secondary_command_buffers[buffer_index],0, 1, vkstate.viewport);
+		vkCmdSetScissor(secondary_command_buffers[buffer_index], 0, 1, vkstate.scissor);
 
 
 		vkCmdBindPipeline(secondary_command_buffers[buffer_index], VK_PIPELINE_BIND_POINT_GRAPHICS, vkstate.graphics_pipeline);
@@ -259,11 +261,7 @@ void write_command_buffers(void) {
 		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], positions_binding, 1, &vkstate.buffers[positions_buffer_index], offsets);
 		vkCmdBindVertexBuffers(secondary_command_buffers[buffer_index], texture_selector_binding, 1, &vkstate.buffers[texture_selector_buffer_index], offsets);
 
-
-
-		//WARNING currently, vertices is an array, not a pointer. This means sizeof(vertices) gives the size of the /whole thing/, not just the size of a pointer.
-		//replace this if/when dynamic memroy allocatino is being used!
-		vkCmdDraw(secondary_command_buffers[buffer_index], 36, 289, 0, 0);
+		vkCmdDraw(secondary_command_buffers[buffer_index], 36, 10000, 0, 0);
 		// vkCmdDraw(vkstate.cmd_buffers[buffer_index], sizeof(vertices)/sizeof(vertices[0]), 1, 0, 0);
 		//now im just using a number. again, it needs to be the size of the whole array
 		vkEndCommandBuffer(secondary_command_buffers[buffer_index]);
@@ -371,16 +369,16 @@ void create_image(void) {
 	sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	sampler_create_info.anisotropyEnable = VK_TRUE;
-	sampler_create_info.maxAnisotropy = vkstate.max_anisotropy;
+	sampler_create_info.maxAnisotropy = vkstate.max_anisotropy/8;
 	sampler_create_info.minLod = 0;
-	sampler_create_info.maxLod = image_info.mipLevels;
+	sampler_create_info.maxLod = image_info.mipLevels/3;
 	// sampler_create_info.anisotropyEnable = VK_TRUE;
 	// sampler_create_info.maxAnisotropy = 16;
 	sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 	sampler_create_info.unnormalizedCoordinates = VK_FALSE;
 	sampler_create_info.compareEnable = VK_FALSE;
 	sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
-	sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
 
 	result = vkCreateSampler(vkstate.log_dev, &sampler_create_info, NULL, &texture_sampler);
@@ -580,7 +578,7 @@ void create_buffers(void) {
 	positions_buffer_index = vkstate.num_buffers - 1;
 	/* create second buffer -- copy most of the data from the first */
 	VkBufferCreateInfo positions_buffer_info = vertices_buffer_info;
-	positions_buffer_info.size = sizeof(triangle_models);
+	positions_buffer_info.size = sizeof(mat4)*num_cubes;
 	vkCreateBuffer(vkstate.log_dev, &positions_buffer_info, NULL, &vkstate.buffers[positions_buffer_index]);
 	CHECK_ERROR(result, "Failed to create texture sampling vertex buffer. Erro num %d\n", result);
 	/* deal with second buffers memory */
@@ -607,7 +605,7 @@ void create_buffers(void) {
 	texture_selector_buffer_index = vkstate.num_buffers - 1;
 	/* create second buffer -- copy most of the data from the first */
 	VkBufferCreateInfo texture_selector_buffer_info = vertices_buffer_info;
-	texture_selector_buffer_info.size = sizeof(texture_selectors);
+	texture_selector_buffer_info.size = sizeof(vec3)*num_cubes;
 	vkCreateBuffer(vkstate.log_dev, &texture_selector_buffer_info, NULL, &vkstate.buffers[texture_selector_buffer_index]);
 	CHECK_ERROR(result, "Failed to create texture sampling vertex buffer. Erro num %d\n", result);
 	/* deal with second buffers memory */
@@ -668,6 +666,9 @@ void write_image_copy_command_buffer() {
 			cmd_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		}
 	vkBeginCommandBuffer(*init_command_buffer, &cmd_begin_info);
+	vkCmdSetViewport(*init_command_buffer,0, 1, vkstate.viewport);
+	vkCmdSetScissor(*init_command_buffer, 0, 1, vkstate.scissor);
+
 		VkImageMemoryBarrier barrier_to_transfer_dst = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 			.srcAccessMask = 0,
@@ -703,8 +704,8 @@ void write_image_copy_command_buffer() {
 		// vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &mip_barrier);
 		// 		   
 		// 		   
-		int mipWidth = region.imageExtent.width;
-		int mipHeight = region.imageExtent.height;
+		float mipWidth = region.imageExtent.width;
+		float mipHeight = region.imageExtent.height;
 		int mip_levels = (uint32_t)floor(log2(fmax(mipWidth, mipHeight))) + 1;
 
 		for (int i = 1; i < mip_levels; i++) {
@@ -797,6 +798,7 @@ void write_image_copy_command_buffer() {
 		// 	},
 		// };
 		// vkCmdPipelineBarrier(*init_command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier_to_shader_read);
+
 	vkEndCommandBuffer(*init_command_buffer);
 
 }
@@ -810,18 +812,31 @@ void execute_command_buffer_callback(int index) {
 	has_copied_image = 1;
 	vkCmdExecuteCommands(vkstate.cmd_buffers[index], 1, init_command_buffer);
 }
-
 void triangle_init(void) {
+	// num_cubes = 10000;
+	triangle_models = calloc(num_cubes, sizeof(mat4));
+	// texture_selectors = malloc(sizeof(float*)*10000);
 	create_buffers();
 	create_image();
-	for (int i = 0; i < 17 ; i++) {
-		for (int j = 0; j < 17; j++) {
-			glm_mat4_identity(triangle_models[i*17 + j]);
-			glm_translate(triangle_models[i*17 + j], (vec3){i,2,j});
-			memcpy((vec3 *)vkstate.buffer_data[texture_selector_buffer_index] + i*17 + j, (vec3[]){{1, 1, 2},{1, 2, 2},{2, 1, 2},{2, 2, 2}}[(i*17 + j)%4], sizeof(vec3));
+
+	for (int i = 0; i < 100; i++) {
+		// texture_selectors[i] = malloc(sizeof(float)*3);
+		for (int j = 0; j < 100; j++) {
+			memcpy((vec3*)vkstate.buffer_data[texture_selector_buffer_index] + i*100 + j, (vec3){1,2,2},sizeof(vec3));
+			glm_mat4_identity(triangle_models[i*100 + j]);
+			glm_translate(triangle_models[i*100 + j], (vec3){j,2,i});
+			// glm_mat4_identity(*((mat4*)vkstate.buffer_data[positions_buffer_index]+i*10 + j));
+			// glm_translate(*((mat4*)vkstate.buffer_data[positions_buffer_index]+i*10 + j), (vec3){j,2,i} );
 		}
 	}
-	memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models, sizeof(triangle_models));
+	memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models, sizeof(mat4)*num_cubes);
+	// for (int i = 0; i < 17 ; i++) {
+	// 	for (int j = 0; j < 17; j++) {
+	// 		glm_mat4_identity(triangle_models[i*17 + j]);
+	// 		glm_translate(triangle_models[i*17 + j], (vec3){i,2,j});
+	// 		memcpy((vec3 *)vkstate.buffer_data[texture_selector_buffer_index] + i*17 + j, (vec3[]){{1, 1, 2},{1, 2, 2},{2, 1, 2},{2, 2, 2}}[(i*17 + j)%4], sizeof(vec3));
+	// 	}
+	// }
 	// glm_mat4_identity(triangle_models[0]);
 	// glm_mat4_identity(triangle_models[1]);
 	// glm_mat4_identity(triangle_models[2]);
@@ -833,22 +848,22 @@ void triangle_init(void) {
 	write_image_copy_command_buffer();
 	write_command_buffers();
 }
-static int counter = 0;
+// static int counter = 0;
 void triangle_update(int dt) {
 	// glm_rotate(triangle_models[0], .005f, (vec3){1,1,1});
-	counter += dt;
-	float fctr = (float)counter;
-	for (int i = 0; i < 17 ; i++) {
-		for (int j = 0; j < 17; j++) {
-			float fi = (float)i;
-			float fj = (float)j;
-			vec3 translation = {0,sin( (fctr/100 + sin((fi*17 + fj))*10  )/4)/30,0};
-			glm_translate(triangle_models[i*17 + j], translation);
-			memcpy((mat4*)vkstate.buffer_data[positions_buffer_index]+(i*17 + j), triangle_models[i*17 + j], sizeof(triangle_models[0]));
-			glm_translate(triangle_models[i*17 + j], (vec3){-translation[0], -translation[1], -translation[2]});
+	// counter += dt;
+	// float fctr = (float)counter;
+	// for (int i = 0; i < 17 ; i++) {
+	// 	for (int j = 0; j < 17; j++) {
+	// 		float fi = (float)i;
+	// 		float fj = (float)j;
+	// 		vec3 translation = {0,sin( (fctr/100 + sin((fi*17 + fj))*10  )/4)/30,0};
+	// 		glm_translate(triangle_models[i*17 + j], translation);
+	// 		memcpy((mat4*)vkstate.buffer_data[positions_buffer_index]+(i*17 + j), triangle_models[i*17 + j], sizeof(triangle_models[0]));
+	// 		glm_translate(triangle_models[i*17 + j], (vec3){-translation[0], -translation[1], -translation[2]});
 
-		}
-	}
+	// 	}
+	// }
 
 	// for (int i = 0; i < 17 ; i++) {
 	// 	for (int j = 0; j < 17; j++) {

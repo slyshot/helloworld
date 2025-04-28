@@ -31,6 +31,9 @@ typedef struct {
 	uint32_t swapchain_imagecount;
 	VkImage *swapchain_images;
 
+	VkDeviceMemory *msaa_image_memories;
+	VkImage *msaa_images;
+
 	VkImageViewCreateInfo *imageview_infos;
 	VkImageView *imageviews;
 	VkImageView *resolve_imageviews;
@@ -47,11 +50,6 @@ typedef struct {
 	VkCommandBufferAllocateInfo *cmd_allocate_info;
 	VkCommandBuffer *cmd_buffers;
 
-	// VkCommandBufferBeginInfo *cmd_begin_info;
-
-	// VkRenderPassBeginInfo *render_pass_begin_infos;
-
-
 	VkShaderModuleCreateInfo *vertex_shader_module_create_info;
 	VkShaderModule vertex_shader_module;
 
@@ -67,21 +65,17 @@ typedef struct {
 	VkVertexInputBindingDescription *vertex_input_binding_descriptions;
 	VkVertexInputAttributeDescription *vertex_input_attribute_descriptions;
 	
-
-	VkPipelineVertexInputStateCreateInfo *pipeline_vertex_input_state_create_info;
-
 	VkViewport *viewport;
 	VkRect2D *scissor;
+
+
+	VkPipelineVertexInputStateCreateInfo *pipeline_vertex_input_state_create_info;
 	VkPipelineViewportStateCreateInfo *pipeline_viewport_state_create_info;
-
 	VkPipelineRasterizationStateCreateInfo *pipeline_rasterization_state_create_info;
-
 	VkPipelineMultisampleStateCreateInfo *pipeline_multisample_state_create_info;
-	
 	VkPipelineInputAssemblyStateCreateInfo *pipeline_input_assembly_state_create_info;
-
+	VkPipelineDynamicStateCreateInfo *pipeline_dynamic_state_create_info;
 	VkPipelineColorBlendStateCreateInfo *pipeline_color_blend_state_create_info;
-
 	VkPipelineDepthStencilStateCreateInfo *depth_stencil_state_create_info;
 	// no dynamic state in vkstate until I say it is so!
 	// VkPipelineDynamicStateCreateInfo *pipeline_dynamic_state_create_info;
@@ -113,7 +107,10 @@ typedef struct {
 	//todo: make this a pointer
 	VkPipeline graphics_pipeline;
 	VkSemaphoreCreateInfo *semaphore_create_info;
-	VkSemaphore *semaphores;
+	VkSemaphore *semaphores_finished;
+	VkSemaphore *semaphores_available;
+
+
 	VkFenceCreateInfo *fence_create_info;
 	VkFence *fences;
 	// I do not like this, sam I am. I do not like these eggs and ham.
