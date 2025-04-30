@@ -50,18 +50,14 @@ static int buffer_index = -1;
 
 VkDeviceMemory vp_buffer_memory;
 VkDescriptorSet vp_descriptor_set;
-void make_once(void) {
-	//create buffer
-
-}
-
 void vp_descriptorset(void) {
 	if (buffer_index != -1) return;
-	VkBufferCreateInfo buffer_info = {0};
-	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_info.size = sizeof(mat4);
-	buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	VkBufferCreateInfo buffer_info = {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = sizeof(mat4),
+		.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+	};
 	vkstate.num_buffers++;
 	buffer_index = vkstate.num_buffers - 1;
 	vkstate.buffers = realloc(vkstate.buffers, vkstate.num_buffers*sizeof(VkBuffer));
@@ -74,10 +70,11 @@ void vp_descriptorset(void) {
 	vkstate.buffer_mem = realloc(vkstate.buffer_mem, vkstate.num_buffers*sizeof(VkDeviceMemory));
 	VkMemoryRequirements mem_req;
 	vkGetBufferMemoryRequirements(vkstate.log_dev, vkstate.buffers[buffer_index], &mem_req);
-	VkMemoryAllocateInfo alloc_info = {0};
-	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.allocationSize = mem_req.size;
-	alloc_info.memoryTypeIndex = get_memory_type_index(vkstate.buffers[buffer_index]);
+	VkMemoryAllocateInfo alloc_info = {
+		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		.allocationSize = mem_req.size,
+		.memoryTypeIndex = get_memory_type_index(vkstate.buffers[buffer_index]),
+	};
 	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL, &vkstate.buffer_mem[buffer_index]);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Unable to allocate memory for vp buffer. Errno %d\n",result);
@@ -88,16 +85,21 @@ void vp_descriptorset(void) {
 
 	vkstate.num_descriptor_bindings++;
 	VkDescriptorSetLayoutBinding *vp_layout_binding = malloc(sizeof(VkDescriptorSetLayoutBinding));
-	vp_layout_binding->binding = vkstate.num_descriptor_bindings - 1;
-	vp_layout_binding->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	vp_layout_binding->descriptorCount = 1;
-	vp_layout_binding->stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	vp_layout_binding->pImmutableSamplers = NULL;
+	*vp_layout_binding = (VkDescriptorSetLayoutBinding) {
+		.binding = vkstate.num_descriptor_bindings - 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		.descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+		.pImmutableSamplers = NULL,
+	};
 	//create descriptor set....
-	VkDescriptorSetLayoutCreateInfo layout_info = {0};
-	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layout_info.bindingCount = 1;
-	layout_info.pBindings = vp_layout_binding;
+	VkDescriptorSetLayoutCreateInfo layout_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = 1,
+		.pBindings = vp_layout_binding,
+		.pNext = NULL,
+		.flags = 0,
+	};
 	vkstate.num_descriptor_set_layouts++;
 	vkstate.descriptor_set_layouts = realloc(vkstate.descriptor_set_layouts, vkstate.num_descriptor_set_layouts*sizeof(VkDescriptorSetLayout));
 	result = vkCreateDescriptorSetLayout(vkstate.log_dev, &layout_info, NULL, &vkstate.descriptor_set_layouts[vkstate.num_descriptor_set_layouts - 1]);
@@ -107,47 +109,42 @@ void vp_descriptorset(void) {
 
 	vkstate.num_descriptor_sets++;
 	vkstate.descriptor_sets = realloc(vkstate.descriptor_sets, vkstate.num_descriptor_sets*sizeof(VkDescriptorSet));
-	VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {0};
-	descriptor_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	descriptor_set_alloc_info.descriptorPool = *vkstate.uniform_descriptor_pool;
-	descriptor_set_alloc_info.descriptorSetCount = 1;
-	descriptor_set_alloc_info.pSetLayouts = &vkstate.descriptor_set_layouts[vkstate.num_descriptor_set_layouts - 1];
+	VkDescriptorSetAllocateInfo descriptor_set_alloc_info = {
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool = *vkstate.uniform_descriptor_pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &vkstate.descriptor_set_layouts[vkstate.num_descriptor_set_layouts - 1],
+		.pNext = NULL,
+	};
 	result = vkAllocateDescriptorSets(vkstate.log_dev, &descriptor_set_alloc_info, &vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1]);
 	if (result != VK_SUCCESS) {
 		LOG_ERROR("Unable to create descriptor set layout. Errnum %d\n",result);
 	}
 
-	VkDescriptorBufferInfo descriptor_buffer_info = {0};
-	descriptor_buffer_info.buffer = vkstate.buffers[vkstate.num_buffers-1];
-	descriptor_buffer_info.offset = 0;
-	descriptor_buffer_info.range = sizeof(mat4);
+	VkDescriptorBufferInfo descriptor_buffer_info = {
+		.buffer = vkstate.buffers[vkstate.num_buffers-1],
+		.offset = 0,
+		.range = sizeof(mat4),
+	};
 
-	VkWriteDescriptorSet descriptorWrite = {0};
-	descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrite.dstSet = vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1];
-	descriptorWrite.dstBinding = vkstate.num_descriptor_bindings - 1;
-	descriptorWrite.dstArrayElement = 0;
-	descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	descriptorWrite.descriptorCount = 1;
-	descriptorWrite.pBufferInfo = &descriptor_buffer_info;
+	VkWriteDescriptorSet descriptorWrite = {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1],
+		.dstBinding = vkstate.num_descriptor_bindings - 1,
+		.dstArrayElement = 0,
+		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		.descriptorCount = 1,
+		.pBufferInfo = &descriptor_buffer_info,
+	};
 	vkUpdateDescriptorSets(vkstate.log_dev, 1, &descriptorWrite, 0, NULL);
 
 	vp_buffer_memory = vkstate.buffer_mem[buffer_index];
 	vp_descriptor_set = vkstate.descriptor_sets[vkstate.num_descriptor_sets - 1];
-
-
-
-
-	//create vp layout binding
-
 }
 
 void vp_before_vulkan_init(void) {
 	vkstate.num_required_uniform_descriptors++;
 }
-// void vp_swapchain_cleanup(void) {
-// }
-
 
 
 void vp_init(void) {

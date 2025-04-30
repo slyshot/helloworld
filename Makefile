@@ -9,6 +9,9 @@ DEP = $(patsubst %.c,%.d,$(SRC))
 IGN_OBJ = $(patsubst %.c,%.o,$(IGNORES))
 IGN_DEP = $(patsubst %.c,%.d,$(IGNORES))
 
+SHADERSRC = $(shell find . -name "shader.*")
+SHADEROBJ = $(patsubst ./shader.%, %.spv, $(SHADERSRC))
+
 CFLAGS += `sdl2-config --cflags` -I/usr/local/include
 LDFLAGS += `sdl2-config --libs` -L/usr/local/lib -lm
 LDFLAGS += -lglfw -lvulkan -ldl -lX11 -lXxf86vm -lXrandr -lXi
@@ -18,7 +21,7 @@ COMPILE = $(CC) $(CFLAGS)
 LINK = $(LD) $(LDFLAGS)
 
 DEPFLAGS = -MMD
-all: $(PROG)
+all: $(PROG) $(SHADEROBJ)
 
 $(PROG): $(OBJ)
 	$(LINK) $^ -o $@
@@ -28,11 +31,14 @@ $(PROG): $(OBJ)
 %.d: ;
 .PHONY: clean
 
+%.spv: shader.%
+	glslc -o $@ $<
+
 clean:
-	@touch $(DEP) $(OBJ) $(PROG)
-	@rm -r $(DEP) $(OBJ) $(PROG)
+	@touch $(DEP) $(OBJ) $(PROG) $(SHADEROBJ)
+	@rm -r $(DEP) $(OBJ) $(PROG) $(SHADEROBJ)
 clean_all:
-	@touch $(DEP) $(OBJ) $(IGN_DEP) $(IGN_OBJ) $(PROG)
-	@rm -r $(DEP) $(OBJ) $(IGN_DEP) $(IGN_OBJ) $(PROG)
+	@touch $(DEP) $(OBJ) $(IGN_DEP) $(IGN_OBJ) $(PROG) $(SHADEROBJ)
+	@rm -r $(DEP) $(OBJ) $(IGN_DEP) $(IGN_OBJ) $(PROG) $(SHADEROBJ)
 
 include $(DEP)

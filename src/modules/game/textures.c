@@ -20,20 +20,12 @@ module textures = {
 				.data_type = vertex_attribute_callback,
 				.fn_ptr = textures_vertex_attribute_callback,
 			},
-			// {
-			// 	.data_type = before_swapchain_recreation_callback,
-			// 	.fn_ptr = texture_swapchain_recreation_callback,
-			// }
 		},
 	},
 };
 
 int texture_vertex_binding = -1;
 int texture_selector_binding = -1;
-// void texture_swapchain_recreation_callback(void) {
-// 	if (texture_vertex_binding != -1) {
-// 	}
-// }
 void textures_vertex_attribute_callback(void) {
 	if (texture_vertex_binding != -1) return;
 	int num_binding_descs = vkstate.num_vertex_input_binding_desc;
@@ -42,28 +34,35 @@ void textures_vertex_attribute_callback(void) {
 	vkstate.num_vertex_input_attribute_desc++;
 	texture_vertex_binding = num_binding_descs;
 	vkstate.vertex_input_binding_descriptions = realloc(vkstate.vertex_input_binding_descriptions, sizeof(VkVertexInputBindingDescription) * (num_binding_descs+1));
-	vkstate.vertex_input_binding_descriptions[num_binding_descs].binding = num_binding_descs;
-	vkstate.vertex_input_binding_descriptions[num_binding_descs].stride = sizeof(vec2);
-	vkstate.vertex_input_binding_descriptions[num_binding_descs].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	vkstate.vertex_input_binding_descriptions[num_binding_descs] = (VkVertexInputBindingDescription) {
+		.binding = num_binding_descs,
+		.stride = sizeof(vec2),
+		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+	};
 	vkstate.vertex_input_attribute_descriptions = realloc(vkstate.vertex_input_attribute_descriptions, sizeof(VkVertexInputAttributeDescription) * (num_attr_descs+1));
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].binding = num_binding_descs;
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].location = num_attr_descs;
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].format = VK_FORMAT_R32G32_SFLOAT;
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].offset = 0;
-
+	vkstate.vertex_input_attribute_descriptions[num_attr_descs] = (VkVertexInputAttributeDescription) {
+		.binding = num_binding_descs,
+		.location = num_attr_descs,
+		.format = VK_FORMAT_R32G32_SFLOAT,
+		.offset = 0,
+	};
 	num_binding_descs = vkstate.num_vertex_input_binding_desc;
 	num_attr_descs = vkstate.num_vertex_input_attribute_desc;
 	vkstate.num_vertex_input_binding_desc++;
 	vkstate.num_vertex_input_attribute_desc++;
 	texture_selector_binding = num_binding_descs;
+
 	vkstate.vertex_input_binding_descriptions = realloc(vkstate.vertex_input_binding_descriptions, sizeof(VkVertexInputBindingDescription) * (num_binding_descs+1));
-	vkstate.vertex_input_binding_descriptions[num_binding_descs].binding = num_binding_descs;
-	vkstate.vertex_input_binding_descriptions[num_binding_descs].stride = sizeof(vec3);
-	vkstate.vertex_input_binding_descriptions[num_binding_descs].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+	vkstate.vertex_input_binding_descriptions[num_binding_descs] = (VkVertexInputBindingDescription) {
+		.binding = num_binding_descs,
+		.stride = sizeof(vec3),
+		.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE,
+	};
 	vkstate.vertex_input_attribute_descriptions = realloc(vkstate.vertex_input_attribute_descriptions, sizeof(VkVertexInputAttributeDescription) * (num_attr_descs+1));
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].binding = num_binding_descs;
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].location = num_attr_descs;
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].format = VK_FORMAT_R32G32B32_SFLOAT;
-	vkstate.vertex_input_attribute_descriptions[num_attr_descs].offset = 0;
-	// printf("%d\n",num_attr_descs);
+	vkstate.vertex_input_attribute_descriptions[num_attr_descs] = (VkVertexInputAttributeDescription) {
+		.binding = num_binding_descs,
+		.location = num_attr_descs,
+		.format = VK_FORMAT_R32G32B32_SFLOAT,
+		.offset = 0,
+	};
 }

@@ -42,32 +42,39 @@ void camera_perspective_reset(void) {
 }
 void camera_update(int dt) {
 	if (keyboard_state != NULL){
-		vec3 out;
-		float s = ((float)dt)/3.0f;
-		glm_vec3_div(direction, (vec3){s,s,s}, out);
-		if (keyboard_state[SDL_SCANCODE_W]) {
-			glm_vec3_add(position, out, position);
-		}
-		if (keyboard_state[SDL_SCANCODE_S]) {
-			glm_vec3_sub(position, out, position);
-		};
-		glm_cross(direction, (vec3){0.0f,1.0f,0.0f}, out);
-		glm_normalize(out);
-		glm_vec3_div(out, (vec3){s,s,s}, out);
-		if (keyboard_state[SDL_SCANCODE_D]) {
-			glm_vec3_sub(position, out, position);
-		}
-		if (keyboard_state[SDL_SCANCODE_A]) {
-			glm_vec3_add(position, out, position);			
-		}
-		glm_cross(direction,out,out);
-		glm_normalize(out);
-		glm_vec3_div(out, (vec3){s,s,s}, out);
-		if (keyboard_state[SDL_SCANCODE_E]) {
-			glm_vec3_add(position, out, position);			
-		}
-		if (keyboard_state[SDL_SCANCODE_Q]) {
-			glm_vec3_sub(position, out, position);			
+		if (keyboard_state[SDL_SCANCODE_W] ||\
+			keyboard_state[SDL_SCANCODE_A] ||\
+			keyboard_state[SDL_SCANCODE_S] ||\
+			keyboard_state[SDL_SCANCODE_D] ||\
+			keyboard_state[SDL_SCANCODE_E] ||\
+			keyboard_state[SDL_SCANCODE_Q]) {
+			vec3 out;
+			float s = ((float)dt)/3.0f;
+			glm_vec3_div(direction, (vec3){s,s,s}, out);
+			if (keyboard_state[SDL_SCANCODE_W]) {
+				glm_vec3_add(position, out, position);
+			}
+			if (keyboard_state[SDL_SCANCODE_S]) {
+				glm_vec3_sub(position, out, position);
+			};
+			glm_cross(direction, (vec3){0.0f,1.0f,0.0f}, out);
+			glm_normalize(out);
+			glm_vec3_div(out, (vec3){s,s,s}, out);
+			if (keyboard_state[SDL_SCANCODE_D]) {
+				glm_vec3_sub(position, out, position);
+			}
+			if (keyboard_state[SDL_SCANCODE_A]) {
+				glm_vec3_add(position, out, position);
+			}
+			glm_cross(direction,out,out);
+			glm_normalize(out);
+			glm_vec3_div(out, (vec3){s,s,s}, out);
+			if (keyboard_state[SDL_SCANCODE_E]) {
+				glm_vec3_add(position, out, position);
+			}
+			if (keyboard_state[SDL_SCANCODE_Q]) {
+				glm_vec3_sub(position, out, position);
+			}
 		}
 	}
 	direction[0] = cos(glm_rad(yaw)) * cos(glm_rad(pitch));
@@ -103,7 +110,6 @@ void camera_eventhandle(SDL_Event *e) {
 			if (pitch < -89.0f) {
 				pitch = -89.0f;
 			}
-			// printf("Got mouse motion event. relative motion %d, %d\n",e->motion.xrel,e->motion.yrel);
 			break;
 		case SDL_KEYDOWN:
 			if (e->key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
