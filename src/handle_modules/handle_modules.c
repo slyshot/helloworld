@@ -19,11 +19,6 @@ static module **priority_sorted_init = NULL;
 static module **priority_sorted_update = NULL;
 static module **priority_sorted_cleanup = NULL;
 void init_priority_handling(void) {
-    /*
-        lazy way to do this-- I am creating 3 copies of `modules`,
-        so that I can sort them by their priority, one for each function which may have a priority.
-        then I can call those functions in order.
-    */
     int len = modules_len();
     priority_sorted_init = calloc(len, sizeof(module *));
     priority_sorted_cleanup = calloc(len, sizeof(module *));

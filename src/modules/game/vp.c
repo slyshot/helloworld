@@ -1,28 +1,22 @@
-// #include "sdl/modules/vulkan/vkstate.h"
-// #include "handle_modules/module.h"
-// #include "handle_modules/module_com.h"
 #include <stdlib.h>
-// #include <string.h>
+#include "handle_modules/module_com.h"
 #include "sdl/modules/vulkan/vkstate.h"
 #include "log/log.h"
 #include "sdl/modules/vp/vp.h"
 #include "handle_modules/module.h"
-#include "handle_modules/module_com.h"
-// #include "SDL2/SDL.h"
 #include "sdl/sdl.h"
 
 void vp_init(void);
+void vp_update(int);
 void vp_cleanup(void);
 void vp_descriptorset(void);
-// void vp_swapchain_cleanup(void);
 void vp_before_vulkan_init(void);
-// void write_command_buffers(void);
 module vp = {
 	.title = "VP",
 	.description = "A module devoted to initializing and dealing with the view and projection matrices.",
 	.priority = {0,0,0},
 	.init = vp_init,
-	.update = NULL,
+	.update = vp_update,
 	.cleanup = NULL,
 	.shared_data = &(comms){
 		.num_comms = 2,
@@ -80,8 +74,6 @@ void vp_descriptorset(void) {
 		LOG_ERROR("Unable to allocate memory for vp buffer. Errno %d\n",result);
 	}
 	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[buffer_index], vkstate.buffer_mem[buffer_index], 0);
-
-
 
 	vkstate.num_descriptor_bindings++;
 	VkDescriptorSetLayoutBinding *vp_layout_binding = malloc(sizeof(VkDescriptorSetLayoutBinding));
@@ -151,3 +143,9 @@ void vp_init(void) {
 	glm_mat4_identity(view);
 }
 
+void vp_update(int) {
+	void *data;
+	vkMapMemory(vkstate.log_dev, vp_buffer_memory, 0, sizeof(mat4), 0, &data);
+	glm_mat4_mulN((mat4 *[]){&projection, &view}, 2, data);
+	vkUnmapMemory(vkstate.log_dev, vp_buffer_memory);
+}

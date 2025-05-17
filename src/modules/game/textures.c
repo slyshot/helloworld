@@ -1,4 +1,5 @@
-#include <cglm/cglm.h>
+#include <cglm/types.h>
+#include <stdlib.h>
 #include "handle_modules/module.h"
 #include "handle_modules/module_com.h"
 #include "sdl/modules/vulkan/vulkan.h"

@@ -17,10 +17,8 @@
 void triangle_init(void);
 void triangle_update(int);
 void write_command_buffers(void);
-void triangle_eventhandle(SDL_Event *);
 void execute_command_buffer_callback(int);
 void execute_command_buffer_renderpass_callback(int);
-// void triangle_swapchain_cleanup(void);
 void create_image(void);
 void triangle_before_vulkan_init(void);
 void triangle_swapchain_recreation_callback(void);
@@ -32,17 +30,12 @@ module triangle = {
 	.init = triangle_init,
 	.update = triangle_update,
 	.shared_data = &(comms) {
-		.num_comms = 7,
+		.num_comms = 5,
 		.comms = (module_com[]){
 			{
 				.data_type = after_swapchain_recreation_callback,
 				.fn_ptr = write_command_buffers,
 			},
-			{
-				.data_type = after_vulkan_init_callback,
-				.fn_ptr = triangle_swapchain_recreation_callback,
-			},			
-
 			{
 				.data_type = descriptorset_callback,
 				.fn_ptr = create_image,
@@ -60,16 +53,11 @@ module triangle = {
 				.data_type = execute_commandbuf_callback,
 				.fn_ptr = (void (*)(void))execute_command_buffer_callback,
 			},
-			{
-				.data_type = before_swapchain_recreation_callback,
-				.fn_ptr = triangle_swapchain_recreation_callback,
-			}
 
 		},
 	},
 	.cleanup = NULL,
 };
-
 
 //vertices is an example of a model.
 //in not too long, I should have more
@@ -164,21 +152,8 @@ static vec2 cube_texture_unwrap[] = {
 
 };
 int num_cubes = 10000;
-// static vec3 *texture_selectors= NULL;
 mat4 *triangle_models = NULL;
 mat4 triangle_vp = {0};
-
-// vec3 colors[6] = (vec3[6]) {
-// 	{1,0,0},{0,1,0},{0,0,1}, {1,0,0},{0,1,0},{0,0,1}, 
-// };
-
-/*
-this is a nearly failed attempt to isolate the triangle-drawing portion of the code(not including shaders)
-issue is: buffers. oh buffers. they need to be bound to the command buffer upon the command buffers creation, but the command buffer needs to be recreated every time
-the swapchain is invalidated. Which is //all the time//. So the solution I came up with is using num_buffers, it just iterates through them both in the initialization of this
-and in the vulkan initialization, if they're not NULL (meaning if nobody else has any buffers to add). That's the crux; we need vulkan to be initialized in order to do things, 
-but vulkan needs us to have already done things in order to finish setting things up, and to recreate things.
-*/
 
 extern uint32_t find_memory_type(uint32_t, VkMemoryPropertyFlags);
 extern int get_memory_type_index(VkBuffer);
@@ -194,18 +169,8 @@ VkCommandBuffer *secondary_command_buffers;
 VkCommandBuffer *init_command_buffer;
 void triangle_before_vulkan_init(void) {
 	for (int i = 0; i < 36; i++) {
-		// if (i < 6) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0], cube_texture_unwrap[i][1] - 64);
-		// else if (i < 12) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0] + 64, cube_texture_unwrap[i][1] - 128);
-		// else if (i < 18) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0] - 64, cube_texture_unwrap[i][1] - 64);
-		// else if (i < 24) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0] + 128, cube_texture_unwrap[i][1] + 64);
-		// else if (i < 30) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0], cube_texture_unwrap[i][1] - 64);
-		// else if (i < 36) printf("{%.1ff, %.1ff},", cube_texture_unwrap[i][0], cube_texture_unwrap[i][1] - 64);
-		// // printf("%d\n",i);
-		// printf("\n");
 		cube_texture_unwrap[i][0] = ((float)cube_texture_unwrap[i][0])/384.0f;
 		cube_texture_unwrap[i][1] = ((float)cube_texture_unwrap[i][1])/256.0f;
-
-		// printf("%f %f\n",cube_texture_unwrap[i][0], cube_texture_unwrap[i][1]);
 	}
 	vkstate.num_required_combined_image_sampler_descriptors++;
 }
@@ -216,24 +181,13 @@ VkImageView texture_image_view;
 VkSampler texture_sampler;
 static int texture_descriptor_binding = -1; 
 VkBuffer *staging_buffer;
-
-// int selector_buffer_index;
 VkBuffer *descriptor_buffer;
-// void create_selector_buffer(void) {
-
-
-// }
 vec3 test = {1,2,2};
-void triangle_swapchain_recreation_callback(void) {
-	// create_buffers();
-	// create_image();
-}
 void write_command_buffers(void) {
-
 	//dont really need to check both, but it is more descriptive this way.
 	if (vertices_buffer_index == -1 || texture_buffer_index == -1) return;
 
-	for (uint32_t buffer_index = 0; buffer_index < vkstate.cmd_allocate_info->commandBufferCount; buffer_index++) {
+	for (uint32_t buffer_index = 0; buffer_index < vkstate.cmd_buffer_count; buffer_index++) {
 		VkCommandBufferInheritanceInfo inheritence_info = {
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO,
 			.renderPass = *vkstate.render_pass,
@@ -441,7 +395,7 @@ void triangle_descriptorset_callback(void) {
 }
 void create_buffers(void) {
 	//im doing it like this because it's the most lazy way to allocate a number of buffers when I won't know what that number will be
-	//if I settle on something, I'll change all the reallocs to one and whatnot
+		//if I settle on something, I'll turn all the little reallocs into one bigger one and so on
 	/* resize relevant arrays */
 	vkstate.num_buffers++;
 	vkstate.buffer_mem = realloc(vkstate.buffer_mem, sizeof(VkDeviceMemory)*vkstate.num_buffers);
@@ -566,26 +520,12 @@ void create_buffers(void) {
 	};
 	result = vkAllocateMemory(vkstate.log_dev, &alloc_info, NULL,&vkstate.buffer_mem[texture_selector_buffer_index]);
 	CHECK_ERROR(result, "error allocating memory. error num %d\n",result);
-	// if (result != VK_SUCCESS) exit(-1);
 	/* bind it, map it, copy it */
 	vkBindBufferMemory(vkstate.log_dev, vkstate.buffers[texture_selector_buffer_index], vkstate.buffer_mem[texture_selector_buffer_index], 0);
-	// vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[texture_selector_buffer_index],  0, texture_selector_buffer.size, 0, &vkstate.buffer_data[texture_selector_buffer_index]);
-	// memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models[1], positions_buffer_info.size);
-
-	// void *data;
 	vkMapMemory(vkstate.log_dev, vkstate.buffer_mem[texture_selector_buffer_index], 0, mem_req.size, 0, &vkstate.buffer_data[texture_selector_buffer_index]);
-	// memcpy(data, texture_selectors, sizeof(texture_selectors));
-	//TODO marking this because it's taking sizeof(arry) when i will be using a pointer for similar things later. Gonna start
-	//setting up the move from arrays to pointers now
-	// vkUnmapMemory(vkstate.log_dev, vkstate.buffer_mem[texture_selector_buffer_index]);
-
-
-
-
 
 }
 
-// mat4 model_test;
 void create_command_buffers() {
 	VkCommandBufferAllocateInfo allocInfo = {0};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -606,9 +546,6 @@ void write_image_copy_command_buffer() {
 	VkCommandBufferInheritanceInfo inheritence_info = {0};
 	VkCommandBufferBeginInfo cmd_begin_info = {0};
 	{ //command begin info
-		// if (vkstate.cmd_begin_info == NULL) {
-		// 	vkstate.cmd_begin_info = calloc(sizeof(VkCommandBufferBeginInfo),1);
-		// }
 		inheritence_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
 		inheritence_info.renderPass = *vkstate.render_pass;
 		inheritence_info.subpass = 0;
@@ -654,8 +591,8 @@ void write_image_copy_command_buffer() {
 		vkCmdCopyBufferToImage(*init_command_buffer, *staging_buffer, texture_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		float mipWidth = region.imageExtent.width;
 		float mipHeight = region.imageExtent.height;
+		
 		int mip_levels = (uint32_t)floor(log2(fmax(mipWidth, mipHeight))) + 1;
-
 		for (int i = 1; i < mip_levels; i++) {
 			VkImageMemoryBarrier mip_barrier = {
 				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -743,37 +680,17 @@ void execute_command_buffer_callback(int index) {
 	vkCmdExecuteCommands(vkstate.cmd_buffers[index], 1, init_command_buffer);
 }
 void triangle_init(void) {
-	// num_cubes = 10000;
 	triangle_models = calloc(num_cubes, sizeof(mat4));
-	// texture_selectors = malloc(sizeof(float*)*10000);
 	create_buffers();
 	create_image();
-
 	for (int i = 0; i < 100; i++) {
-		// texture_selectors[i] = malloc(sizeof(float)*3);
 		for (int j = 0; j < 100; j++) {
 			memcpy((vec3*)vkstate.buffer_data[texture_selector_buffer_index] + i*100 + j, (vec3){1,2,2},sizeof(vec3));
 			glm_mat4_identity(triangle_models[i*100 + j]);
 			glm_translate(triangle_models[i*100 + j], (vec3){j,2,i});
-			// glm_mat4_identity(*((mat4*)vkstate.buffer_data[positions_buffer_index]+i*10 + j));
-			// glm_translate(*((mat4*)vkstate.buffer_data[positions_buffer_index]+i*10 + j), (vec3){j,2,i} );
-			// memcpy((vec3 *)vkstate.buffer_data[texture_selector_buffer_index] + i*17 + j, (vec3[]){{1, 1, 2},{1, 2, 2},{2, 1, 2},{2, 2, 2}}[(i*17 + j)%4], sizeof(vec3));
 		}
 	}
 	memcpy(vkstate.buffer_data[positions_buffer_index], triangle_models, sizeof(mat4)*num_cubes);
-	// for (int i = 0; i < 17 ; i++) {
-	// 	for (int j = 0; j < 17; j++) {
-	// 		glm_mat4_identity(triangle_models[i*17 + j]);
-	// 		glm_translate(triangle_models[i*17 + j], (vec3){i,2,j});
-	// 	}
-	// }
-	// glm_mat4_identity(triangle_models[0]);
-	// glm_mat4_identity(triangle_models[1]);
-	// glm_mat4_identity(triangle_models[2]);
-	// glm_translate(triangle_models[0], (vec3){0,0,5});
-	// glm_translate(triangle_models[1], (vec3){0,1,3});
-	// glm_translate(triangle_models[2], (vec3){1,1,1});
-	// glm_scale(triangle_models[0], (vec3){0.5f,0.5f,0.5f});
 	create_command_buffers();
 	write_image_copy_command_buffer();
 	write_command_buffers();
@@ -786,29 +703,12 @@ void triangle_update(int dt) {
 		for (int j = 0; j < 100; j++) {
 			float fi = (float)i;
 			float fj = (float)j;
-			vec3 translation = {0,sin( (fctr/100 + sin((fi*100 + fj))*10  )/4)/30,0};
+			vec3 translation = {0,sin( (fctr/100 + sin((fi*100 + fj))*100  )/4)/30,0};
 			glm_translate(triangle_models[i*100 + j], translation);
 			memcpy((mat4*)vkstate.buffer_data[positions_buffer_index]+(i*100 + j), triangle_models[i*100 + j], sizeof(triangle_models[0]));
 			glm_translate(triangle_models[i*100 + j], (vec3){-translation[0], -translation[1], -translation[2]});
 
 		}
 	}
-
-	// for (int i = 0; i < 17 ; i++) {
-	// 	for (int j = 0; j < 17; j++) {
-	// 		glm_translate(triangle_models[i*17 + j], (vec3){0,-sin((float)((float)counter + (float)(i*17 + j))/200)/5 - sin((float)((float)i + (float)j/10.0f + (float)counter/10)/100),0});
-	// 	}
-	// }
-
-
-
-	void *data;
-	vkMapMemory(vkstate.log_dev, vp_buffer_memory, 0, sizeof(mat4), 0, &data);
-	glm_mat4_mulN((mat4 *[]){&projection, &view}, 2, data);
-	vkUnmapMemory(vkstate.log_dev, vp_buffer_memory);
-
-
-}
-void triangle_eventhandle(SDL_Event *e) {
 
 }

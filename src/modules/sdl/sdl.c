@@ -7,14 +7,6 @@
 #include "handle_modules/module_com.h"
 void sdl_init(void);
 void sdl_update(int);
-// module sdl = {
-// 	.title = 
-// 	.description = 
-// 	.priority = {0,0,0}
-// 	.init = 
-// 	.update = 
-// 	.cleanup = 
-// };
 module sdl = {
 	.title = "SDL Module",
 	.description = "A module for handling SDL events and creating the window.",
@@ -25,11 +17,11 @@ module sdl = {
 	.cleanup = NULL,
 };
 
-
 SDL_Window *window;
 
 const uint8_t *keyboard_state = (uint8_t[128]){0};
 int sdl_event_filter(void *userdata, SDL_Event *event);
+
 void sdl_init(void) {
 	SDL_Init(SDL_INIT_TIMER | SDL_INIT_EVENTS);
 	window = SDL_CreateWindow("Hello, world!", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 700, 600, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
@@ -37,7 +29,6 @@ void sdl_init(void) {
 		LOG_ERROR("Could not create SDL window.\n%s\n",SDL_GetError());
 	}
 }
-int counter = 0;
 void sdl_update(int dt) {
 	SDL_Event event;	
 	while (SDL_PollEvent(&event)) {

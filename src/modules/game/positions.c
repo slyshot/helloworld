@@ -37,7 +37,6 @@ void positions_vertex_attribute_callback(void) {
 	int num_binding_descs = vkstate.num_vertex_input_binding_desc;
 	int num_attr_descs = vkstate.num_vertex_input_attribute_desc;
 	vertices_binding = num_binding_descs; 
-	// printf("Vertices binding is supposed to be %d\n", num_binding_descs);
 	vkstate.num_vertex_input_attribute_desc++;
 	vkstate.num_vertex_input_binding_desc++;
 	vkstate.vertex_input_binding_descriptions = realloc(vkstate.vertex_input_binding_descriptions, sizeof(VkVertexInputBindingDescription) * (num_binding_descs+1));

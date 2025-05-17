@@ -37,7 +37,7 @@ module camera = {
 
 
 void camera_perspective_reset(void) {
-	float aspect = (float)vkstate.swapchain_info->imageExtent.width / (float)vkstate.swapchain_info->imageExtent.height;
+	float aspect = (float)vkstate.screen_extent.width / (float)vkstate.screen_extent.height;
 	glm_perspective(45.0f, aspect, 0.1f, 1000.0f, projection);
 }
 void camera_update(int dt) {
